@@ -454,6 +454,13 @@ export const createAnthropicCompatibleRuntime = <T extends Record<string, any> =
 
       const initOptions = {
         apiKey: finalApiKey,
+        // Explicitly disable the Anthropic SDK's ANTHROPIC_AUTH_TOKEN env fallback. The SDK
+        // otherwise resolves authToken from env even when apiKey is provided, and buildHeaders
+        // then attaches BOTH x-api-key (apiKey) and Authorization: Bearer (authToken). Many
+        // anthropic-compatible endpoints (e.g. DeepSeek /anthropic) honor Bearer first, so a
+        // residual/stale ANTHROPIC_AUTH_TOKEN in the environment overrides the keyVault apiKey
+        // and causes a 401. Passing null opts out of that fallback so the keyVault apiKey wins.
+        authToken: null,
         baseURL: finalBaseURL,
         ...constructorOptions,
         ...rest,

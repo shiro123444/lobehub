@@ -3,13 +3,26 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAnthropicGenerateObject } from './generateObject';
 
+// generateObject streams then reassembles via finalMessage(); mocks mirror that shape.
+const mockStreamClient = (response: any) => ({
+  messages: {
+    stream: vi.fn().mockReturnValue({
+      finalMessage: vi.fn().mockResolvedValue(response),
+    }),
+  },
+});
+
+const mockStreamRejectClient = (error: any) => ({
+  messages: {
+    stream: vi.fn().mockReturnValue({
+      finalMessage: vi.fn().mockRejectedValue(error),
+    }),
+  },
+});
+
 describe('Anthropic generateObject', () => {
   it('should throw error when neither tools nor schema is provided', async () => {
-    const mockClient = {
-      messages: {
-        create: vi.fn(),
-      },
-    };
+    const mockClient = { messages: { stream: vi.fn() } };
 
     const payload = {
       messages: [{ content: 'Generate data', role: 'user' as const }],
@@ -23,19 +36,15 @@ describe('Anthropic generateObject', () => {
 
   describe('use struct output schema', () => {
     it('should return structured data on successful API call', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { age: 30, name: 'John' },
-                name: 'person_extractor',
-                type: 'tool_use',
-              },
-            ],
-          }),
-        },
-      };
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: { age: 30, name: 'John' },
+            name: 'person_extractor',
+            type: 'tool_use',
+          },
+        ],
+      });
 
       const payload = {
         messages: [{ content: 'Generate a person object', role: 'user' as const }],
@@ -53,7 +62,7 @@ describe('Anthropic generateObject', () => {
 
       const result = await createAnthropicGenerateObject(mockClient as any, payload);
 
-      expect(mockClient.messages.create).toHaveBeenCalledWith(
+      expect(mockClient.messages.stream).toHaveBeenCalledWith(
         expect.objectContaining({
           max_tokens: 64_000,
           messages: [{ content: 'Generate a person object', role: 'user' }],
@@ -84,19 +93,7 @@ describe('Anthropic generateObject', () => {
     });
 
     it('should ignore whitespace-only system prompts', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { status: 'ok' },
-                name: 'status_extractor',
-                type: 'tool_use',
-              },
-            ],
-          }),
-        },
-      };
+      const mockClient = mockStreamClient({ content: [] });
 
       const payload = {
         messages: [
@@ -112,7 +109,7 @@ describe('Anthropic generateObject', () => {
 
       await createAnthropicGenerateObject(mockClient as any, payload);
 
-      expect(mockClient.messages.create).toHaveBeenCalledWith(
+      expect(mockClient.messages.stream).toHaveBeenCalledWith(
         expect.objectContaining({
           system: undefined,
         }),
@@ -121,19 +118,15 @@ describe('Anthropic generateObject', () => {
     });
 
     it('should handle system messages correctly', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { status: 'success' },
-                name: 'status_extractor',
-                type: 'tool_use',
-              },
-            ],
-          }),
-        },
-      };
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: { status: 'success' },
+            name: 'status_extractor',
+            type: 'tool_use',
+          },
+        ],
+      });
 
       const payload = {
         messages: [
@@ -149,7 +142,7 @@ describe('Anthropic generateObject', () => {
 
       const result = await createAnthropicGenerateObject(mockClient as any, payload);
 
-      expect(mockClient.messages.create).toHaveBeenCalledWith(
+      expect(mockClient.messages.stream).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: expect.any(Array),
           system: [{ text: 'You are a helpful assistant', type: 'text' }],
@@ -160,20 +153,16 @@ describe('Anthropic generateObject', () => {
       expect(result).toEqual({ status: 'success' });
     });
 
-    it('should handle options correctly', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { data: 'test' },
-                name: 'data_extractor',
-                type: 'tool_use',
-              },
-            ],
-          }),
-        },
-      };
+    it('should pass abort signal through to the streaming call', async () => {
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: { data: 'test' },
+            name: 'data_extractor',
+            type: 'tool_use',
+          },
+        ],
+      });
 
       const payload = {
         messages: [{ content: 'Generate data', role: 'user' as const }],
@@ -190,7 +179,7 @@ describe('Anthropic generateObject', () => {
 
       const result = await createAnthropicGenerateObject(mockClient as any, payload, options);
 
-      expect(mockClient.messages.create).toHaveBeenCalledWith(
+      expect(mockClient.messages.stream).toHaveBeenCalledWith(
         expect.any(Object),
         expect.objectContaining({
           signal: options.signal,
@@ -201,18 +190,14 @@ describe('Anthropic generateObject', () => {
     });
 
     it('should return undefined when no tool use found in response', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                text: 'Some text response without tool use',
-                type: 'text',
-              },
-            ],
-          }),
-        },
-      };
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            text: 'Some text response without tool use',
+            type: 'text',
+          },
+        ],
+      });
 
       const payload = {
         messages: [{ content: 'Generate data', role: 'user' as const }],
@@ -229,25 +214,21 @@ describe('Anthropic generateObject', () => {
     });
 
     it('should call onUsage callback with usage data', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { data: 'test' },
-                name: 'test_tool',
-                type: 'tool_use',
-              },
-            ],
-            usage: {
-              cache_creation_input_tokens: 0,
-              cache_read_input_tokens: 0,
-              input_tokens: 100,
-              output_tokens: 50,
-            },
-          }),
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: { data: 'test' },
+            name: 'test_tool',
+            type: 'tool_use',
+          },
+        ],
+        usage: {
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          input_tokens: 100,
+          output_tokens: 50,
         },
-      };
+      });
 
       const payload = {
         messages: [{ content: 'Generate data', role: 'user' as const }],
@@ -273,30 +254,26 @@ describe('Anthropic generateObject', () => {
     });
 
     it('should handle complex nested schemas', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: {
-                  metadata: {
-                    created: '2024-01-01',
-                  },
-                  user: {
-                    name: 'Alice',
-                    profile: {
-                      age: 25,
-                      preferences: ['music', 'sports'],
-                    },
-                  },
-                },
-                name: 'user_extractor',
-                type: 'tool_use',
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: {
+              metadata: {
+                created: '2024-01-01',
               },
-            ],
-          }),
-        },
-      };
+              user: {
+                name: 'Alice',
+                profile: {
+                  age: 25,
+                  preferences: ['music', 'sports'],
+                },
+              },
+            },
+            name: 'user_extractor',
+            type: 'tool_use',
+          },
+        ],
+      });
 
       const payload = {
         messages: [{ content: 'Generate complex user data', role: 'user' as const }],
@@ -345,24 +322,20 @@ describe('Anthropic generateObject', () => {
 
   describe('tools calling', () => {
     it('should handle tools calling mode with multiple tools', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { city: 'New York', unit: 'celsius' },
-                name: 'get_weather',
-                type: 'tool_use',
-              },
-              {
-                input: { timezone: 'America/New_York' },
-                name: 'get_time',
-                type: 'tool_use',
-              },
-            ],
-          }),
-        },
-      };
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: { city: 'New York', unit: 'celsius' },
+            name: 'get_weather',
+            type: 'tool_use',
+          },
+          {
+            input: { timezone: 'America/New_York' },
+            name: 'get_time',
+            type: 'tool_use',
+          },
+        ],
+      });
 
       const payload = {
         messages: [{ content: 'What is the weather and time in New York?', role: 'user' as const }],
@@ -402,7 +375,7 @@ describe('Anthropic generateObject', () => {
 
       const result = await createAnthropicGenerateObject(mockClient as any, payload as any);
 
-      expect(mockClient.messages.create).toHaveBeenCalledWith(
+      expect(mockClient.messages.stream).toHaveBeenCalledWith(
         expect.objectContaining({
           max_tokens: 64_000,
           messages: [{ content: 'What is the weather and time in New York?', role: 'user' }],
@@ -446,19 +419,15 @@ describe('Anthropic generateObject', () => {
     });
 
     it('should handle tools calling mode with single tool', async () => {
-      const mockClient = {
-        messages: {
-          create: vi.fn().mockResolvedValue({
-            content: [
-              {
-                input: { a: 5, b: 3, operation: 'add' },
-                name: 'calculate',
-                type: 'tool_use',
-              },
-            ],
-          }),
-        },
-      };
+      const mockClient = mockStreamClient({
+        content: [
+          {
+            input: { a: 5, b: 3, operation: 'add' },
+            name: 'calculate',
+            type: 'tool_use',
+          },
+        ],
+      });
 
       const payload = {
         messages: [{ content: 'Add 5 and 3', role: 'user' as const }],
@@ -491,12 +460,7 @@ describe('Anthropic generateObject', () => {
 
   it('should propagate API errors correctly', async () => {
     const apiError = new Error('API Error: Model not found');
-
-    const mockClient = {
-      messages: {
-        create: vi.fn().mockRejectedValue(apiError),
-      },
-    };
+    const mockClient = mockStreamRejectClient(apiError);
 
     const payload = {
       messages: [{ content: 'Generate data', role: 'user' as const }],
@@ -515,12 +479,7 @@ describe('Anthropic generateObject', () => {
   it('should handle abort signals correctly', async () => {
     const apiError = new Error('Request was cancelled');
     apiError.name = 'AbortError';
-
-    const mockClient = {
-      messages: {
-        create: vi.fn().mockRejectedValue(apiError),
-      },
-    };
+    const mockClient = mockStreamRejectClient(apiError);
 
     const payload = {
       messages: [{ content: 'Generate data', role: 'user' as const }],

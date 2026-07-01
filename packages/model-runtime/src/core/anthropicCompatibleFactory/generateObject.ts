@@ -67,17 +67,26 @@ export const createAnthropicGenerateObject = async (
   try {
     log('calling Anthropic API with max_tokens: %d', 64_000);
 
-    const response = await client.messages.create(
-      {
-        max_tokens: 64_000,
-        messages: anthropicMessages,
-        model,
-        system: systemPrompts,
-        tool_choice,
-        tools: finalTools,
-      },
-      { signal: options?.signal },
-    );
+    // Stream + finalMessage() instead of non-streaming create(). The Anthropic SDK enforces
+    // a 10-minute cap on non-streaming requests when max_tokens is large
+    // (calculateNonstreamingTimeout), which rejects structured-output calls (max_tokens
+    // 64_000) before they reach the network — breaking every anthropic-compatible
+    // provider's generateObject (real Claude, DeepSeek /anthropic, etc.). Streaming bypasses
+    // that cap; finalMessage() reassembles the full tool_use blocks, so the response shape
+    // (content + usage) is identical to create() and the extraction below is unchanged.
+    const response = await client.messages
+      .stream(
+        {
+          max_tokens: 64_000,
+          messages: anthropicMessages,
+          model,
+          system: systemPrompts,
+          tool_choice,
+          tools: finalTools,
+        },
+        { signal: options?.signal },
+      )
+      .finalMessage();
 
     log('received response with %d content blocks', response.content.length);
     log('response: %O', response);
