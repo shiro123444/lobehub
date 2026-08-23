@@ -338,7 +338,7 @@ export default {
     '- Navigate to **Settings**, then select Cursor settings\n- Choose **MCP** on the left\n- Click **Add New Global MCP Server** at the top right\n- Copy and paste the server configuration into the existing file, then save',
 
   'mcp.details.deployment.platform.steps.lobeChat':
-    '- Open the **LobeHub Desktop** app\n- Go to **Settings** - **Default Agent**\n- Then select **Skill Settings** - **Custom Skills**\n- Click **Quick Import JSON Configuration**\n- Copy and paste the server configuration into the text box, then install',
+    '- Open the **Nexus Desktop** app\n- Go to **Settings** - **Default Agent**\n- Then select **Skill Settings** - **Custom Skills**\n- Click **Quick Import JSON Configuration**\n- Copy and paste the server configuration into the text box, then install',
 
   'mcp.details.deployment.platform.steps.openai':
     '- Open your **OpenAI app** or development environment\n- Configure MCP tools in the **Responses API**\n- Add MCP blocks to the **tools** array in API requests\n- Set **server_url** to your MCP server endpoint\n- Include required authentication headers (API key, token, etc.)\n- Use the `allowed_tools` parameter to restrict exposed tools\n- Set `require_approval` to control tool execution approval',
@@ -1101,6 +1101,12 @@ export default {
 
   'tab.assistant': 'Agent',
 
+  'tab.analytics': 'Analytics',
+
+  'tab.review': 'Review',
+
+  'tab.submissions': 'Submissions',
+
   'tab.home': 'Home',
 
   'tab.model': 'Model',
@@ -1112,6 +1118,114 @@ export default {
   'tab.skill': 'Skills',
 
   'tab.user': 'User',
+
+  'analytics.empty.desc': 'No usage data yet',
+
+  'analytics.empty.title': 'No data',
+
+  'analytics.meta.models': 'Models',
+
+  'analytics.meta.paths': 'API Paths',
+
+  'analytics.meta.providers': 'Providers',
+
+  'analytics.meta.sources': 'Sources',
+
+  'analytics.metric.requests': 'Requests',
+
+  'analytics.metric.spend': 'Spend',
+
+  'analytics.metric.tokens': 'Tokens',
+
+  'analytics.model.requests': 'calls',
+
+  'analytics.model.table.requests': 'Requests',
+
+  'analytics.model.table.spend': 'Spend',
+
+  'analytics.model.table.tokens': 'Tokens',
+
+  'analytics.modelBreakdown.title': 'Model breakdown',
+
+  'analytics.overview.requests': 'Total requests',
+
+  'analytics.overview.spend': 'Total spend',
+
+  'analytics.overview.subjects': 'Active subjects',
+
+  'analytics.overview.tokens': 'Total tokens',
+
+  'analytics.nexus.file': 'Local NEXUS file',
+
+  'analytics.nexus.missing': 'No NEXUS source',
+
+  'analytics.nexus.remote': 'NEXUS gateway',
+
+  'analytics.rank.left': 'Item',
+
+  'analytics.rank.model': 'Model leaderboard',
+
+  'analytics.rank.path': 'API path leaderboard',
+
+  'analytics.rank.nexusKey': 'NEXUS key leaderboard',
+
+  'analytics.rank.provider': 'Provider leaderboard',
+
+  'analytics.rank.right': 'Value',
+
+  'analytics.rank.subject': 'Subject leaderboard',
+
+  'analytics.rank.user': 'User leaderboard',
+
+  'analytics.source.breakdown': 'Source breakdown',
+
+  'analytics.source.title': 'Source overview',
+
+  'analytics.sources.agent': 'Agent',
+
+  'analytics.sources.chat': 'Chat',
+
+  'analytics.sources.image': 'Image',
+
+  'analytics.sources.nexus': 'NEXUS API',
+
+  'analytics.sources.video': 'Video',
+
+  'analytics.title': 'Community analytics',
+
+  'analytics.trend.title': 'Usage trend',
+
+  'registry.mine.desc': 'Track your submitted Skills, MCP servers, and plugins.',
+  'registry.mine.empty': 'No submissions yet',
+  'registry.mine.title': 'My Submissions',
+  'registry.refresh': 'Refresh',
+  'registry.review.approve': 'Approve',
+  'registry.review.backfill': 'Backfill AI',
+  'registry.review.backfillConfirmDesc':
+    'Analyze existing Skill records and fill summary, category, installation, tags, and related hints where they are missing.',
+  'registry.review.backfillConfirmTitle': 'Backfill Skill metadata?',
+  'registry.review.backfillDone':
+    'AI backfill finished: {{updated}} updated, {{processed}} processed.',
+  'registry.review.backfillPartial':
+    'AI backfill finished with {{failed}} failures. {{updated}} records were updated.',
+  'registry.review.confirmDesc': 'Review and update the status for {{name}}.',
+  'registry.review.confirmTitle': 'Confirm Review Action',
+  'registry.review.desc': 'Approve user submissions into the Nexus community registry.',
+  'registry.review.empty': 'No pending submissions',
+  'registry.review.reject': 'Reject',
+  'registry.review.title': 'Review Queue',
+  'registry.review.updated': 'Review status updated',
+  'registry.status.active': 'Published',
+  'registry.status.archived': 'Archived',
+  'registry.status.hidden': 'Hidden',
+  'registry.status.pending': 'Pending',
+  'registry.status.rejected': 'Rejected',
+  'registry.table.actions': 'Actions',
+  'registry.table.createdAt': 'Created',
+  'registry.table.item': 'Item',
+  'registry.table.openSource': 'Open source',
+  'registry.table.source': 'Source',
+  'registry.table.status': 'Status',
 
   'user.agents': 'Agents',
 
@@ -1190,15 +1304,41 @@ export default {
   'user.website': 'Website',
 
   'user.cancel': 'Cancel',
+  'user.aiPolish': 'AI organize',
+  'user.aiPolishMode': 'Organize mode',
+  'user.aiPolishMode.normalize': 'Normalize structure',
+  'user.aiPolishMode.polish': 'Polish copy',
+  'user.artifactContentRequired': 'Please provide content',
   'user.githubUrl': 'GitHub Repository URL',
   'user.githubUrlInvalid': 'Please enter a valid GitHub repository URL',
   'user.githubUrlRequired': 'Please enter a GitHub repository URL',
+  'user.manifestJson': 'Manifest JSON',
+  'user.repoDescription': 'Description',
+  'user.repoKind': 'Type',
+  'user.repoKind.auto': 'Auto detect',
+  'user.repoKind.plugin': 'Plugin',
+  'user.repoKind.skill': 'Skill',
+  'user.repoName': 'Display name',
+  'user.repoNamePlaceholder': 'Use repository name if empty',
+  'user.repoTags': 'Tags',
+  'user.repoTagsPlaceholder': 'Separate tags with commas',
   'user.submit': 'Submit',
   'user.submitRepo': 'Submit Repo',
   'user.submitRepoDescription':
-    'Submit your GitHub repository to import your Skills or MCPs to the community.',
+    'Keep the original source, then let Nexus recognize, organize, and submit it for review.',
   'user.submitRepoError': 'Failed to submit repository. Please try again.',
-  'user.submitRepoHint': 'The repository will be reviewed before being published.',
+  'user.submitRepoHint':
+    'Nexus keeps the original upload or GitHub source. AI organization only extracts metadata and improves the community card structure; reviewers can inspect and adjust before publishing.',
   'user.submitRepoSuccess': 'Repository submitted successfully! It will be reviewed shortly.',
   'user.submitRepoTitle': 'Submit Your Repository',
+  'user.submitSource': 'Source',
+  'user.submitSource.github': 'GitHub',
+  'user.submitSource.manifest': 'Manifest',
+  'user.submitStep.preview': 'Preview',
+  'user.submitStep.review': 'Review',
+  'user.submitStep.source': 'Source',
+  'user.skillMdPlaceholder': 'Paste the original SKILL.md content here',
+  'user.zipPackage': 'ZIP package',
+  'user.zipPackageHint': 'Click to select a ZIP package. The original archive is kept for review.',
+  'user.zipPackageRequired': 'Please upload a ZIP package',
 };

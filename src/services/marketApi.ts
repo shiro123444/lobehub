@@ -5,6 +5,7 @@ import {
 } from '@lobehub/market-sdk';
 
 import { lambdaClient } from '@/libs/trpc/client';
+import { getMarketBaseUrl } from '@/services/_url';
 import { discoverService } from '@/services/discover';
 import {
   type AgentForkBatchInput,
@@ -224,7 +225,7 @@ export class MarketApiService {
    * Get skill download URL from market
    */
   getSkillDownloadUrl(identifier: string): string {
-    const marketBaseUrl = process.env.NEXT_PUBLIC_MARKET_BASE_URL || 'https://market.lobehub.com';
+    const marketBaseUrl = getMarketBaseUrl();
     return `${marketBaseUrl}/api/v1/skills/${identifier}/download`;
   }
 }

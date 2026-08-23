@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { mutate as globalMutate } from 'swr';
 
 import { lambdaClient } from '@/libs/trpc/client';
-import { MARKET_OIDC_ENDPOINTS } from '@/services/_url';
+import { getMarketBaseUrl, MARKET_OIDC_ENDPOINTS } from '@/services/_url';
 import { useServerConfigStore } from '@/store/serverConfig';
 import { serverConfigSelectors } from '@/store/serverConfig/selectors';
 import { useUserStore } from '@/store/user';
@@ -167,7 +167,7 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
   // Initialize OIDC client (client-side only)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const baseUrl = process.env.NEXT_PUBLIC_MARKET_BASE_URL || 'https://market.lobehub.com';
+      const baseUrl = getMarketBaseUrl();
       const desktopRedirectUri = new URL(MARKET_OIDC_ENDPOINTS.desktopCallback, baseUrl).toString();
 
       // Desktop uses Market's manually maintained Web callback; Web uses the current domain
@@ -390,14 +390,18 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
 
   /**
    * Sign-in method (shows confirmation dialog first)
+   * When trusted client is enabled, returns immediately without prompting
    */
   const signIn = useCallback(async (): Promise<number | null> => {
+    if (enableMarketTrustedClient) {
+      return session?.userInfo?.accountId ?? null;
+    }
     return new Promise<number | null>((resolve, reject) => {
       setPendingSignInResolve(() => resolve);
       setPendingSignInReject(() => reject);
       setShowConfirmModal(true);
     });
-  }, []);
+  }, [enableMarketTrustedClient, session?.userInfo?.accountId]);
 
   /**
    * Handle authorization confirmation
@@ -705,6 +709,11 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
   useEffect(() => {
     const unsubscribe = marketAuthEvents.on('market-unauthorized', async (event) => {
       console.info('[MarketAuth] Received unauthorized event for path:', event.path);
+      // Trusted client mode: server handles auth, no user login needed
+      if (enableMarketTrustedClient) {
+        console.info('[MarketAuth] Trusted client enabled, ignoring market-unauthorized event');
+        return;
+      }
       // Desktop: do not open community auth / profile modals from background API 401s.
       // Only attempt a silent token refresh; Lobe cloud re-auth is handled separately (AuthRequiredModal).
       if (isDesktop) {
@@ -720,7 +729,7 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
     });
 
     return unsubscribe;
-  }, [handleUnauthorized, isDesktop, refreshToken]);
+  }, [handleUnauthorized, isDesktop, refreshToken, enableMarketTrustedClient]);
 
   const contextValue: MarketAuthContextType = {
     checkAndShowClaimableResources,

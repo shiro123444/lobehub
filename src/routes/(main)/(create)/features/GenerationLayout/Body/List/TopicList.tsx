@@ -3,6 +3,7 @@
 import { Grid, TooltipGroup } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 import EmptyNavItem from '@/features/NavPanel/components/EmptyNavItem';
 import { useUserStore } from '@/store/user';
@@ -16,8 +17,9 @@ interface TopicListProps {
 }
 
 const TopicsList = memo<TopicListProps>(({ viewMode = 'auto' }) => {
-  const { useStore, namespace } = useGenerationTopicContext();
+  const { useStore, namespace, rootPath } = useGenerationTopicContext();
   const { t } = useTranslation(namespace);
+  const navigate = useNavigate();
   const openNewGenerationTopic = useStore((s: any) => s.openNewGenerationTopic);
   const isLogin = useUserStore(authSelectors.isLogin);
   const useFetchGenerationTopics = useStore((s) => s.useFetchGenerationTopics);
@@ -29,7 +31,15 @@ const TopicsList = memo<TopicListProps>(({ viewMode = 'auto' }) => {
   const isEmpty = !generationTopics || generationTopics.length === 0;
 
   if (isEmpty) {
-    return <EmptyNavItem title={t('topic.createNew')} onClick={openNewGenerationTopic} />;
+    return (
+      <EmptyNavItem
+        title={t('topic.createNew')}
+        onClick={() => {
+          openNewGenerationTopic();
+          if (rootPath) navigate(rootPath);
+        }}
+      />
+    );
   }
 
   const content = generationTopics.map((topic) => (

@@ -36,6 +36,21 @@ type Setter = StoreSetter<UserStore>;
 export const createAuthSlice = (set: Setter, get: () => UserStore, _api?: unknown) =>
   new UserAuthActionImpl(set, get, _api);
 
+const getAuthPageUrl = (pathname: string, callbackUrl?: string) => {
+  const url = new URL(pathname, location.origin);
+
+  // Vite serves only the SPA shell on 9876; auth pages are rendered by Next on 3010.
+  if (import.meta.env.DEV && location.port === '9876') {
+    url.protocol = location.protocol;
+    url.hostname = location.hostname;
+    url.port = '3010';
+  }
+
+  if (callbackUrl) url.searchParams.set('callbackUrl', callbackUrl);
+
+  return url.toString();
+};
+
 export class UserAuthActionImpl {
   readonly #get: () => UserStore;
   readonly #set: Setter;
@@ -76,7 +91,7 @@ export class UserAuthActionImpl {
         onSuccess: () => {
           // Use window.location.href to trigger a full page reload
           // This ensures all client-side state (React, Zustand, cache) is cleared
-          window.location.href = '/signin';
+          window.location.href = getAuthPageUrl('/signin');
         },
       },
     });
@@ -90,7 +105,7 @@ export class UserAuthActionImpl {
     }
 
     const currentUrl = location.toString();
-    window.location.href = `/signin?callbackUrl=${encodeURIComponent(currentUrl)}`;
+    window.location.href = getAuthPageUrl('/signin', currentUrl);
   };
 
   refreshAuthProviders = async (): Promise<void> => {

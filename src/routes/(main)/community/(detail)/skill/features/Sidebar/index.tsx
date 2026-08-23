@@ -1,9 +1,11 @@
 'use client';
 
 import { Flexbox, ScrollShadow } from '@lobehub/ui';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import urlJoin from 'url-join';
+import { useLocation } from 'react-router-dom';
+
+import { useAppOrigin } from '@/hooks/useAppOrigin';
 
 import ShareButton from '../../../features/ShareButton';
 import { useDetailContext } from '../DetailProvider';
@@ -13,10 +15,16 @@ import InstallationConfig from './InstallationConfig';
 
 const Sidebar = memo<{ activeTab?: SkillNavKey; mobile?: boolean }>(
   ({ mobile, activeTab = SkillNavKey.Overview }) => {
-    const { description, tags, name, identifier, icon } = useDetailContext();
+    const { description, tags, name, icon } = useDetailContext();
     const { t } = useTranslation('common');
+    const appOrigin = useAppOrigin();
+    const { hash, pathname, search } = useLocation();
     const showInstallationConfig = activeTab !== SkillNavKey.Installation;
     const showFileTree = activeTab !== SkillNavKey.Resources;
+    const shareUrl = useMemo(
+      () => new URL(`${pathname}${search}${hash}`, appOrigin).toString(),
+      [appOrigin, hash, pathname, search],
+    );
 
     const shareButton = (
       <ShareButton
@@ -27,7 +35,7 @@ const Sidebar = memo<{ activeTab?: SkillNavKey; mobile?: boolean }>(
           desc: description,
           hashtags: tags,
           title: name,
-          url: urlJoin('https://lobehub.com/skills', identifier || ''),
+          url: shareUrl,
         }}
       >
         {t('share')}

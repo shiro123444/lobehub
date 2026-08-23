@@ -49,7 +49,7 @@ export const useSignUp = () => {
       }
 
       const callbackUrl = searchParams.get('callbackUrl') || '/';
-      const username = values.email.split('@')[0];
+      const username = values.username.trim();
       const fetchOptions = await getFetchOptions();
 
       const submit = async (nextFetchOptions?: AuthFetchOptions) =>
@@ -59,6 +59,7 @@ export const useSignUp = () => {
           fetchOptions: nextFetchOptions,
           name: username,
           password: values.password,
+          username,
         });
 
       let { error } = await submit(fetchOptions);
@@ -79,6 +80,11 @@ export const useSignUp = () => {
 
         if (isEmailDuplicate) {
           message.error(t('betterAuth.errors.emailExists'));
+          return;
+        }
+
+        if (signUpError.message?.toLowerCase().includes('username')) {
+          message.error(t('betterAuth.errors.usernameExists'));
           return;
         }
 

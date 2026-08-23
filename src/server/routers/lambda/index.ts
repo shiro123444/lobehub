@@ -27,6 +27,7 @@ import { botMessageRouter } from './botMessage';
 import { briefRouter } from './brief';
 import { changelogRouter } from './changelog';
 import { chunkRouter } from './chunk';
+import { communityAnalyticsRouter } from './communityAnalytics';
 import { comfyuiRouter } from './comfyui';
 import { configRouter } from './config';
 import { deviceRouter } from './device';
@@ -46,6 +47,7 @@ import { knowledgeBaseRouter } from './knowledgeBase';
 import { marketRouter } from './market';
 import { messageRouter } from './message';
 import { messengerRouter } from './messenger';
+import { nexusRegistryRouter } from './nexusRegistry';
 import { notebookRouter } from './notebook';
 import { notificationRouter } from './notification';
 import { oauthDeviceFlowRouter } from './oauthDeviceFlow';
@@ -79,6 +81,7 @@ export const lambdaRouter = router({
   task: taskRouter,
   changelog: changelogRouter,
   brief: briefRouter,
+  communityAnalytics: communityAnalyticsRouter,
   aiAgent: aiAgentRouter,
   aiChat: aiChatRouter,
   aiModel: aiModelRouter,
@@ -106,6 +109,7 @@ export const lambdaRouter = router({
   market: marketRouter,
   message: messageRouter,
   messenger: messengerRouter,
+  nexusRegistry: nexusRegistryRouter,
   notebook: notebookRouter,
   notification: notificationRouter,
   oauthDeviceFlow: oauthDeviceFlowRouter,

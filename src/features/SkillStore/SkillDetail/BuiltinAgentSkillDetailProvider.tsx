@@ -4,6 +4,7 @@ import isEqual from 'fast-deep-equal';
 import { type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useAppOrigin } from '@/hooks/useAppOrigin';
 import { useToolStore } from '@/store/tool';
 
 import { DetailContext, type DetailContextValue } from './DetailContext';
@@ -18,6 +19,7 @@ export const BuiltinAgentSkillDetailProvider = ({
   identifier,
 }: BuiltinAgentSkillDetailProviderProps) => {
   const { t } = useTranslation(['setting']);
+  const appOrigin = useAppOrigin();
 
   const builtinSkills = useToolStore((s) => s.builtinSkills, isEqual);
 
@@ -40,7 +42,7 @@ export const BuiltinAgentSkillDetailProvider = ({
 
   const value: DetailContextValue = {
     author: 'LobeHub',
-    authorUrl: 'https://lobehub.com',
+    authorUrl: appOrigin,
     config: null as any,
     description: skill.description,
     icon: skill.avatar || '',

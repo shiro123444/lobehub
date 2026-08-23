@@ -2,6 +2,8 @@ import type { AiProviderModelListItem } from 'model-bank';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
+import { AiModelModel } from '../../../models/aiModel';
+import { users } from '../../../schemas';
 import type { LobeChatDatabase } from '../../../type';
 import { AiInfraRepos } from '../index';
 
@@ -806,6 +808,46 @@ describe('AiInfraRepos', () => {
       const custom = result.find((m) => m.id === 'my-custom-model');
       expect(custom).toBeDefined();
       expect(custom!.type).toBe('chat');
+    });
+
+    it('should inherit Nexus platform model overrides from the configured admin model owner', async () => {
+      const providerId = 'nexus';
+      const platformOwnerId = 'platform-model-owner-list';
+      const platformModelId = 'platform-disabled-claude-list';
+      const repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        platformModelOwnerId: platformOwnerId,
+      });
+
+      await serverDB
+        .insert(users)
+        .values({ id: platformOwnerId, email: `${platformOwnerId}@example.com` })
+        .onConflictDoNothing();
+      await new AiModelModel(serverDB, platformOwnerId).create({
+        displayName: 'Platform Disabled Claude',
+        enabled: false,
+        id: platformModelId,
+        providerId,
+        type: 'chat',
+      });
+
+      vi.spyOn(repo.aiModelModel, 'getModelListByProviderId').mockResolvedValue([]);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue([
+        {
+          displayName: 'Builtin Claude',
+          enabled: true,
+          id: platformModelId,
+          type: 'chat',
+        },
+      ]);
+
+      const result = await repo.getAiProviderModelList(providerId);
+      const model = result.find((m) => m.id === platformModelId);
+
+      expect(model).toMatchObject({
+        displayName: 'Platform Disabled Claude',
+        enabled: false,
+        id: platformModelId,
+      });
     });
   });
 });

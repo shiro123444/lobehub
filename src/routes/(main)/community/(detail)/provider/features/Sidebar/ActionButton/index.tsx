@@ -6,7 +6,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import urlJoin from 'url-join';
 
-import { OFFICIAL_URL } from '@/const/url';
+import { useAppOrigin } from '@/hooks/useAppOrigin';
 
 import ShareButton from '../../../../features/ShareButton';
 import { useDetailContext } from '../../DetailProvider';
@@ -15,6 +15,7 @@ import ProviderConfig from './ProviderConfig';
 const ActionButton = memo(() => {
   const { models = [], identifier, name } = useDetailContext();
   const { t } = useTranslation('providers');
+  const appOrigin = useAppOrigin();
   return (
     <Flexbox horizontal align={'center'} gap={8} width={'100%'}>
       <ProviderConfig />
@@ -34,7 +35,7 @@ const ActionButton = memo(() => {
             </Flexbox>
           ),
           title: name,
-          url: urlJoin(OFFICIAL_URL, '/community/provider', identifier as string),
+          url: new URL(urlJoin('/community/provider', identifier as string), appOrigin).toString(),
         }}
       />
     </Flexbox>

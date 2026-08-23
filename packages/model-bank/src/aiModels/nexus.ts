@@ -1,0 +1,355 @@
+import type { AIChatModelCard, AIImageModelCard } from '../types/aiModel';
+
+export const nexusGptImage2Schema = {
+  imageUrls: { default: [], maxCount: 1, maxFileSize: 5 * 1024 * 1024 },
+  prompt: { default: '' },
+  size: {
+    default: 'auto',
+    enum: [
+      'auto',
+      '1024x1024',
+      '1536x1024',
+      '1024x1536',
+      '2048x2048',
+      '2048x1152',
+      '3840x2160',
+      '2160x3840',
+    ],
+  },
+};
+
+const nexusClaudeModels: AIChatModelCard[] = [
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Haiku 4.5 served through the NEXUS OpenAI-compatible gateway.',
+    displayName: 'Claude Haiku 4.5',
+    enabled: true,
+    id: 'claude-haiku-4.5',
+    maxOutput: 64_000,
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Sonnet 4.5 served through the NEXUS OpenAI-compatible gateway.',
+    displayName: 'Claude Sonnet 4.5',
+    enabled: true,
+    id: 'claude-sonnet-4.5',
+    maxOutput: 64_000,
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Sonnet 4.6 served through the NEXUS OpenAI-compatible gateway.',
+    displayName: 'Claude Sonnet 4.6',
+    enabled: true,
+    id: 'claude-sonnet-4.6',
+    maxOutput: 64_000,
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Sonnet 4.6 thinking variant served through the NEXUS gateway.',
+    displayName: 'Claude Sonnet 4.6 Thinking',
+    enabled: true,
+    id: 'claude-sonnet-4.6-thinking',
+    maxOutput: 64_000,
+    settings: {
+      extendParams: ['thinking'],
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Sonnet 4.6 agentic variant served through the NEXUS gateway.',
+    displayName: 'Claude Sonnet 4.6 Agentic',
+    enabled: true,
+    id: 'claude-sonnet-4.6-agentic',
+    maxOutput: 64_000,
+    settings: {
+      extendParams: ['thinking'],
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Opus 4.6 served through the NEXUS OpenAI-compatible gateway.',
+    displayName: 'Claude Opus 4.6',
+    enabled: true,
+    id: 'claude-opus-4.6',
+    maxOutput: 64_000,
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 200_000,
+    description: 'Claude Opus 4.7 served through the NEXUS OpenAI-compatible gateway.',
+    displayName: 'Claude Opus 4.7',
+    enabled: true,
+    id: 'claude-opus-4.7',
+    maxOutput: 64_000,
+    settings: {
+      extendParams: ['opus47Effort'],
+    },
+    type: 'chat',
+  },
+];
+
+const nexusChatModels: AIChatModelCard[] = [
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 1_050_000,
+    description: 'NEXUS OpenAI-compatible frontier model for complex professional work.',
+    displayName: 'GPT-5.4',
+    enabled: true,
+    id: 'gpt-5.4',
+    maxOutput: 128_000,
+    settings: {
+      extendParams: ['gpt5_2ReasoningEffort', 'textVerbosity'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  ...nexusClaudeModels,
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 400_000,
+    description: 'NEXUS coding model optimized for agentic coding tasks.',
+    displayName: 'GPT-5.3 Codex',
+    enabled: true,
+    id: 'gpt-5.3-codex',
+    maxOutput: 128_000,
+    settings: {
+      extendParams: ['codexMaxReasoningEffort'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 400_000,
+    description: 'NEXUS compact model for fast coding, tool use, and subagent workflows.',
+    displayName: 'GPT-5.4 mini',
+    enabled: true,
+    id: 'gpt-5.4-mini',
+    maxOutput: 128_000,
+    settings: {
+      extendParams: ['gpt5_2ReasoningEffort', 'textVerbosity'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+      vision: true,
+    },
+    contextWindowTokens: 400_000,
+    description: 'NEXUS flagship model for coding and long-context agentic workflows.',
+    displayName: 'GPT-5.2',
+    enabled: true,
+    id: 'gpt-5.2',
+    maxOutput: 128_000,
+    settings: {
+      extendParams: ['gpt5_2ReasoningEffort', 'textVerbosity'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      vision: true,
+    },
+    contextWindowTokens: 262_144,
+    description: 'Kimi K2.6 served through the NEXUS OpenAI-compatible gateway.',
+    displayName: 'Kimi K2.6',
+    enabled: true,
+    id: 'kimi-k2.6',
+    maxOutput: 98_304,
+    settings: {
+      extendParams: ['enableReasoning', 'reasoningBudgetToken'],
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+    },
+    contextWindowTokens: 1_000_000,
+    description: 'MiMo-V2.5 Pro served through the NEXUS gateway.',
+    displayName: 'MiMo-V2.5 Pro',
+    enabled: true,
+    id: 'mimo-v2.5-pro',
+    maxOutput: 131_072,
+    settings: {
+      extendParams: ['enableReasoning'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+      video: true,
+      vision: true,
+    },
+    contextWindowTokens: 1_000_000,
+    description: 'MiMo-V2.5 omni-modal model served through the NEXUS gateway.',
+    displayName: 'MiMo-V2.5',
+    enabled: true,
+    id: 'mimo-v2.5',
+    maxOutput: 131_072,
+    settings: {
+      extendParams: ['enableReasoning'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+    },
+    contextWindowTokens: 1_000_000,
+    description: 'MiMo-V2 Pro served through the NEXUS gateway.',
+    displayName: 'MiMo-V2 Pro',
+    enabled: true,
+    id: 'mimo-v2-pro',
+    maxOutput: 131_072,
+    settings: {
+      extendParams: ['enableReasoning'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+      video: true,
+      vision: true,
+    },
+    contextWindowTokens: 262_144,
+    description: 'MiMo-V2 Omni served through the NEXUS gateway.',
+    displayName: 'MiMo-V2 Omni',
+    enabled: true,
+    id: 'mimo-v2-omni',
+    maxOutput: 131_072,
+    settings: {
+      extendParams: ['enableReasoning'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+      search: true,
+      structuredOutput: true,
+    },
+    contextWindowTokens: 262_144,
+    description: 'MiMo-V2 Flash served through the NEXUS gateway.',
+    displayName: 'MiMo-V2 Flash',
+    enabled: true,
+    id: 'mimo-v2-flash',
+    maxOutput: 65_536,
+    settings: {
+      extendParams: ['enableReasoning'],
+      searchImpl: 'params',
+    },
+    type: 'chat',
+  },
+];
+
+const nexusImageModels: AIImageModelCard[] = [
+  {
+    description:
+      'NEXUS image runtime with Responses streaming and OpenAI-compatible image fallback.',
+    displayName: 'GPT Image 2',
+    enabled: true,
+    id: 'gpt-image-2',
+    parameters: nexusGptImage2Schema,
+    releasedAt: '2026-04-21',
+    type: 'image',
+  },
+];
+
+const nexusModels = [...nexusChatModels, ...nexusImageModels];
+
+export { nexusChatModels, nexusClaudeModels, nexusImageModels };
+
+export default nexusModels;

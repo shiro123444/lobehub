@@ -5,10 +5,11 @@ import { type NextRequest } from 'next/server';
 
 import { type TrustedClientUserInfo } from '@/libs/trusted-client';
 import { generateTrustedClientToken, getTrustedClientTokenForSession } from '@/libs/trusted-client';
+import { getMarketBaseUrl } from '@/services/_url';
 
 const log = debug('lobe-server:market-service');
 
-const MARKET_BASE_URL = process.env.MARKET_BASE_URL || 'https://market.lobehub.com';
+const MARKET_BASE_URL = getMarketBaseUrl();
 
 // ============================== Helper Functions ==============================
 

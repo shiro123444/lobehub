@@ -1,3 +1,5 @@
+import { networkInterfaces } from 'node:os';
+
 import { appEnv } from '@/envs/app';
 import { authEnv } from '@/envs/auth';
 import { getRedisConfig } from '@/envs/redis';
@@ -7,6 +9,23 @@ import { isDev } from '@/utils/env';
 const APPLE_TRUSTED_ORIGIN = 'https://appleid.apple.com';
 const MOBILE_APP_SCHEME = 'com.lobehub.app://';
 const EXPO_DEV_SCHEME = 'exp://*/*';
+
+const getLocalIPs = () => {
+  const ips: string[] = [];
+  try {
+    const nets = networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net.family === 'IPv4' && !net.internal) {
+          ips.push(net.address);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[better-auth] Failed to get local IPs:', error);
+  }
+  return ips;
+};
 
 /**
  * Normalize a URL-like string to an origin with https fallback.
@@ -53,8 +72,18 @@ export const getTrustedOrigins = (enabledSSOProviders: string[]) => {
     normalizeOrigin(process.env.VERCEL_URL),
     normalizeOrigin(process.env.VERCEL_BRANCH_URL),
     MOBILE_APP_SCHEME,
-    // Add expo URL in development
-    ...(isDev ? [EXPO_DEV_SCHEME] : []),
+    // Add expo and local LAN IPs in development
+    ...(isDev
+      ? [
+          EXPO_DEV_SCHEME,
+          normalizeOrigin('http://localhost:9876'),
+          normalizeOrigin('http://127.0.0.1:9876'),
+          ...getLocalIPs().flatMap((ip) => [
+            normalizeOrigin(`http://${ip}:3010`),
+            normalizeOrigin(`http://${ip}:9876`),
+          ]),
+        ]
+      : []),
   ].filter(Boolean) as string[];
 
   const baseTrustedOrigins = defaults.length > 0 ? Array.from(new Set(defaults)) : undefined;

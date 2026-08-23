@@ -198,7 +198,7 @@ class DiscoverService {
       identifier,
       install: options.install,
       locale,
-    });
+    }) as Promise<PluginManifest>;
   };
 
   registerClient = () => {

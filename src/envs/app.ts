@@ -17,13 +17,13 @@ const getVercelUrl = () => {
   return `https://${process.env.VERCEL_BRANCH_URL}`;
 };
 
-const APP_URL = process.env.APP_URL
-  ? process.env.APP_URL
-  : isInVercel
+const APP_URL =
+  process.env.APP_URL ||
+  (isInVercel
     ? getVercelUrl()
     : process.env.NODE_ENV === 'development'
       ? `http://localhost:${process.env.PORT || 3010}`
-      : `http://localhost:${process.env.PORT || 3210}`;
+      : `http://localhost:${process.env.PORT || 3210}`);
 
 // INTERNAL_APP_URL is used for server-to-server calls to bypass CDN/proxy
 // Falls back to APP_URL if not set
@@ -37,6 +37,7 @@ export const getAppConfig = () => {
   return createEnv({
     clientPrefix: 'NEXT_PUBLIC_',
     client: {
+      NEXT_PUBLIC_APP_URL: z.string().optional(),
       NEXT_PUBLIC_ENABLE_SENTRY: z.boolean(),
     },
     server: {
@@ -67,13 +68,29 @@ export const getAppConfig = () => {
        * Used to encrypt user payload for trusted client authentication
        * Generate with: openssl rand -hex 32
        */
-      MARKET_TRUSTED_CLIENT_SECRET: z.string().length(83).optional(),
+      MARKET_TRUSTED_CLIENT_SECRET: z.string().regex(/^[\da-f]{64}$/i).optional(),
       /**
        * Trusted Client ID for Market API authentication
        * Must be registered in Market's TRUSTED_CLIENT_IDS whitelist
        * e.g., "lobechat-com", "lobehub-desktop"
        */
       MARKET_TRUSTED_CLIENT_ID: z.string().optional(),
+
+      /**
+       * Enable self-hosted MCP Proxy for web clients
+       * When true, stdio MCP plugins run on the server instead of requiring LobeHub Cloud Gateway
+       */
+      MCP_PROXY_ENABLED: z.boolean().optional(),
+      /**
+       * Maximum number of concurrent MCP processes in the proxy
+       * @default 50
+       */
+      MCP_PROXY_MAX_PROCESSES: z.number().optional(),
+      /**
+       * Idle timeout in ms before an MCP process is cleaned up
+       * @default 300000 (5 minutes)
+       */
+      MCP_PROXY_IDLE_TIMEOUT: z.number().optional(),
 
       AGENT_GATEWAY_SERVICE_TOKEN: z.string().optional(),
       AGENT_GATEWAY_URL: z.string().url().optional(),
@@ -88,6 +105,7 @@ export const getAppConfig = () => {
     },
     runtimeEnv: {
       // Sentry
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || APP_URL,
       NEXT_PUBLIC_ENABLE_SENTRY: !!process.env.NEXT_PUBLIC_SENTRY_DSN,
 
       AGENTS_INDEX_URL: !!process.env.AGENTS_INDEX_URL
@@ -119,6 +137,14 @@ export const getAppConfig = () => {
 
       MARKET_TRUSTED_CLIENT_SECRET: process.env.MARKET_TRUSTED_CLIENT_SECRET,
       MARKET_TRUSTED_CLIENT_ID: process.env.MARKET_TRUSTED_CLIENT_ID,
+
+      MCP_PROXY_ENABLED: process.env.MCP_PROXY_ENABLED === '1',
+      MCP_PROXY_MAX_PROCESSES: process.env.MCP_PROXY_MAX_PROCESSES
+        ? Number(process.env.MCP_PROXY_MAX_PROCESSES)
+        : 50,
+      MCP_PROXY_IDLE_TIMEOUT: process.env.MCP_PROXY_IDLE_TIMEOUT
+        ? Number(process.env.MCP_PROXY_IDLE_TIMEOUT)
+        : 300_000,
 
       AGENT_GATEWAY_SERVICE_TOKEN: process.env.AGENT_GATEWAY_SERVICE_TOKEN,
       AGENT_GATEWAY_URL: process.env.AGENT_GATEWAY_URL,

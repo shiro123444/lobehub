@@ -14,5 +14,25 @@ export function createRouteMatcher(patterns: string[]) {
     return new RegExp(`^${regexStr}$`);
   });
 
-  return (req: NextRequest) => regexPatterns.some((regex) => regex.test(req.nextUrl.pathname));
+  return (req: NextRequest) => {
+    let pathname = req.nextUrl.pathname;
+
+    // Clean variants and spa prefix
+    // e.g., /spa/zh-CN/signin -> /signin
+    // e.g., /zh-CN/signin -> /signin
+    // e.g., /mobile_zh-CN/signin -> /signin
+    pathname = pathname
+      .replace(/^\/spa\/[^/]+/, '')
+      .replace(/^\/[^/]+/, (match) => {
+        const segment = match.slice(1);
+        if (segment.includes('_') || segment.includes('-') || segment.length === 2 || segment === 'en') {
+          return '';
+        }
+        return match;
+      });
+
+    if (pathname === '') pathname = '/';
+
+    return regexPatterns.some((regex) => regex.test(pathname));
+  };
 }

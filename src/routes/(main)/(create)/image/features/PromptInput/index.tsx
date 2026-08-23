@@ -36,6 +36,11 @@ import { aiProviderSelectors, useAiInfraStore } from '@/store/aiInfra';
 import { useImageStore } from '@/store/image';
 import { createImageSelectors, imageGenerationConfigSelectors } from '@/store/image/selectors';
 import {
+  NEXUS_IMAGE_MODEL,
+  NEXUS_IMAGE_PROVIDER,
+  getNexusImageModelList,
+} from '@/routes/(main)/(create)/image/features/nexusImageModels';
+import {
   useDimensionControl,
   useGenerationConfigParam,
 } from '@/store/image/slices/generationConfig/hooks';
@@ -128,6 +133,10 @@ const PromptInput = ({ showTitle = false }: PromptInputProps) => {
   const isSupportWebSearch = useImageStore(isSupportedParamSelector('webSearch'));
   const isLogin = useUserStore(authSelectors.isLogin);
   const enabledImageModelList = useAiInfraStore(aiProviderSelectors.enabledImageModelList);
+  const nexusImageModelList = useMemo(
+    () => getNexusImageModelList(enabledImageModelList),
+    [enabledImageModelList],
+  );
   const { showDimensionControl } = useDimensionControl();
   const { autoSetDimensions, extractUrlAndDimensions } = useAutoDimensions();
 
@@ -137,6 +146,19 @@ const PromptInput = ({ showTitle = false }: PromptInputProps) => {
   const [modelParam, setModelParam] = useQueryState('model');
   const hasProcessedPrompt = useRef(false);
   const hasProcessedModel = useRef(false);
+
+  useEffect(() => {
+    if (!isInit || nexusImageModelList.length === 0) return;
+    if (currentProvider === NEXUS_IMAGE_PROVIDER && currentModel === NEXUS_IMAGE_MODEL) return;
+
+    setModelAndProviderOnSelect(NEXUS_IMAGE_MODEL, NEXUS_IMAGE_PROVIDER);
+  }, [
+    currentModel,
+    currentProvider,
+    isInit,
+    nexusImageModelList.length,
+    setModelAndProviderOnSelect,
+  ]);
 
   const handleGenerate = async () => {
     if (!isLogin) {
@@ -151,7 +173,7 @@ const PromptInput = ({ showTitle = false }: PromptInputProps) => {
     if (modelParam && !hasProcessedModel.current && isInit) {
       const targetModel = modelParam;
 
-      for (const providerGroup of enabledImageModelList) {
+      for (const providerGroup of nexusImageModelList) {
         const found = providerGroup.children.some((m) => m.id === targetModel);
         if (found) {
           setModelAndProviderOnSelect(targetModel, providerGroup.id);
@@ -162,7 +184,7 @@ const PromptInput = ({ showTitle = false }: PromptInputProps) => {
       hasProcessedModel.current = true;
       setModelParam(null);
     }
-  }, [modelParam, isInit, enabledImageModelList, setModelAndProviderOnSelect, setModelParam]);
+  }, [modelParam, isInit, nexusImageModelList, setModelAndProviderOnSelect, setModelParam]);
 
   useEffect(() => {
     if (promptParam && !hasProcessedPrompt.current && isLogin) {
@@ -262,7 +284,7 @@ const PromptInput = ({ showTitle = false }: PromptInputProps) => {
             <GenerationMediaModeSegment mode={'image'} />
             <ModelSwitchPanel
               ModelItemComponent={ImageModelItem}
-              enabledList={enabledImageModelList}
+              enabledList={nexusImageModelList}
               model={currentModel ?? undefined}
               openOnHover={false}
               placement="topLeft"

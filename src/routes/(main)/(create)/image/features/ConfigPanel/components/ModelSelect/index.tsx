@@ -13,6 +13,7 @@ import { useImageStore } from '@/store/image';
 import { imageGenerationConfigSelectors } from '@/store/image/selectors';
 import { type EnabledProviderWithModels } from '@/types/index';
 
+import { getNexusImageModelList } from '../../../nexusImageModels';
 import ImageModelItem from './ImageModelItem';
 
 const prefixCls = 'ant';
@@ -52,6 +53,10 @@ const ModelSelect = memo(() => {
   const setModelAndProviderOnSelect = useImageStore((s) => s.setModelAndProviderOnSelect);
 
   const enabledImageModelList = useAiInfraStore(aiProviderSelectors.enabledImageModelList);
+  const nexusImageModelList = useMemo(
+    () => getNexusImageModelList(enabledImageModelList),
+    [enabledImageModelList],
+  );
 
   const options = useMemo<SelectProps['options']>(() => {
     const getImageModels = (provider: EnabledProviderWithModels) => {
@@ -84,7 +89,7 @@ const ModelSelect = memo(() => {
     };
 
     // if there are no providers at all
-    if (enabledImageModelList.length === 0) {
+    if (nexusImageModelList.length === 0) {
       return [
         {
           disabled: true,
@@ -102,12 +107,12 @@ const ModelSelect = memo(() => {
       ];
     }
 
-    if (enabledImageModelList.length === 1) {
-      const provider = enabledImageModelList[0];
+    if (nexusImageModelList.length === 1) {
+      const provider = nexusImageModelList[0];
       return getImageModels(provider);
     }
 
-    return enabledImageModelList.map((provider) => ({
+    return nexusImageModelList.map((provider) => ({
       label: (
         <Flexbox horizontal justify="space-between">
           <ProviderItemRender
@@ -129,10 +134,10 @@ const ModelSelect = memo(() => {
       ),
       options: getImageModels(provider),
     }));
-  }, [enabledImageModelList, t, navigate]);
+  }, [nexusImageModelList, t, navigate]);
 
   const labelRender: SelectProps['labelRender'] = (props) => {
-    const modelInfo = enabledImageModelList
+    const modelInfo = nexusImageModelList
       .flatMap((provider) =>
         provider.children.map((model) => ({ ...model, providerId: provider.id })),
       )

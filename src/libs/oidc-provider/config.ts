@@ -2,8 +2,9 @@ import { type ClientMetadata } from 'oidc-provider';
 import urlJoin from 'url-join';
 
 import { appEnv } from '@/envs/app';
+import { getMarketOrigin } from '@/services/_url';
 
-const marketBaseUrl = new URL(appEnv.MARKET_BASE_URL ?? 'https://market.lobehub.com').origin;
+const marketBaseUrl = getMarketOrigin(appEnv.MARKET_BASE_URL);
 
 /**
  * Default OIDC client configuration
@@ -12,7 +13,7 @@ export const defaultClients: ClientMetadata[] = [
   {
     application_type: 'web',
     client_id: 'lobehub-desktop',
-    client_name: 'LobeHub Desktop',
+    client_name: 'Nexus Desktop',
     // Only supports authorization code flow
     grant_types: ['authorization_code', 'refresh_token'],
 

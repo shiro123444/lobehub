@@ -10,7 +10,7 @@ import { DragUploadProvider } from '@/components/DragUploadZone/DragUploadProvid
 import { isDesktop } from '@/const/version';
 import AgentMockDevtools from '@/features/AgentMockDevtools';
 import DevFeatureFlagPanel from '@/features/DevFeatureFlagPanel';
-import AuthProvider from '@/layout/AuthProvider';
+import AuthProvider from '@/layout/AuthProvider/index.vite';
 import AppTheme from '@/layout/GlobalProvider/AppTheme';
 import DynamicFavicon from '@/layout/GlobalProvider/DynamicFavicon';
 import { FaviconProvider } from '@/layout/GlobalProvider/FaviconProvider';

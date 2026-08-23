@@ -3,6 +3,7 @@ import { type PropsWithChildren } from 'react';
 
 import BusinessAuthProvider from '@/business/client/BusinessAuthProvider';
 import ClientOnly from '@/components/client/ClientOnly';
+import Loading from '@/components/Loading/BrandTextLoading';
 import { type DynamicLayoutProps } from '@/types/next';
 
 import AuthContainer from './_layout';
@@ -13,7 +14,7 @@ const AuthLayout = async ({ children, params }: PropsWithChildren<DynamicLayoutP
 
   return (
     <AuthGlobalProvider variants={variants}>
-      <ClientOnly>
+      <ClientOnly fallback={<Loading debugId={'Auth'} />}>
         <NuqsAdapter>
           <BusinessAuthProvider>
             <AuthContainer>{children}</AuthContainer>

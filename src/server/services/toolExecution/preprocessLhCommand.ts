@@ -34,7 +34,7 @@ export const preprocessLhCommand = async (
   try {
     const jwt = await signUserJWT(userId);
 
-    const serverUrl = isDev ? 'https://app.lobehub.com' : appEnv.APP_URL;
+    const serverUrl = appEnv.APP_URL;
 
     const envPrefix = `LOBEHUB_JWT=${jwt} LOBEHUB_SERVER=${serverUrl}`;
 

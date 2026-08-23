@@ -12,6 +12,7 @@ export const serverConfigSelectors = {
   enableMagicLink: (s: ServerConfigStore) => s.serverConfig.enableMagicLink || false,
   enableMarketTrustedClient: (s: ServerConfigStore) =>
     s.serverConfig.enableMarketTrustedClient || false,
+  enableMcpProxy: (s: ServerConfigStore) => s.serverConfig.enableMcpProxy || false,
   enableUploadFileToServer: (s: ServerConfigStore) => s.serverConfig.enableUploadFileToServer,
   enableVisualUnderstanding: (s: ServerConfigStore) =>
     s.serverConfig.enableVisualUnderstanding || false,

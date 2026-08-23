@@ -109,4 +109,35 @@ describe('createRouteMatcher', () => {
       expect(matcher(createMockRequest('/api/auth/callback'))).toBe(false);
     });
   });
+
+  describe('route variants and SPA prefixes', () => {
+    it('should match paths prefixed with locale', () => {
+      const matcher = createRouteMatcher(['/signin', '/signup']);
+
+      expect(matcher(createMockRequest('/zh-CN/signin'))).toBe(true);
+      expect(matcher(createMockRequest('/en/signup'))).toBe(true);
+      expect(matcher(createMockRequest('/ja-JP/login'))).toBe(false);
+    });
+
+    it('should match paths prefixed with device and locale variants', () => {
+      const matcher = createRouteMatcher(['/signin', '/signup']);
+
+      expect(matcher(createMockRequest('/mobile_zh-CN/signin'))).toBe(true);
+      expect(matcher(createMockRequest('/desktop_en/signup'))).toBe(true);
+    });
+
+    it('should match paths prefixed with /spa/[variants]', () => {
+      const matcher = createRouteMatcher(['/signin', '/share(.*)']);
+
+      expect(matcher(createMockRequest('/spa/zh-CN/signin'))).toBe(true);
+      expect(matcher(createMockRequest('/spa/mobile_en/share/abc'))).toBe(true);
+    });
+
+    it('should not clean non-variant prefixes', () => {
+      const matcher = createRouteMatcher(['/signin']);
+
+      expect(matcher(createMockRequest('/api/signin'))).toBe(false);
+      expect(matcher(createMockRequest('/other/signin'))).toBe(false);
+    });
+  });
 });

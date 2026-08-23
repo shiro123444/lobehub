@@ -8,7 +8,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { verifyPassword as defaultVerifyPassword } from 'better-auth/crypto';
 import { type BetterAuthOptions } from 'better-auth/minimal';
 import { betterAuth } from 'better-auth/minimal';
-import { admin, emailOTP, genericOAuth, magicLink } from 'better-auth/plugins';
+import { admin, emailOTP, genericOAuth, magicLink, username } from 'better-auth/plugins';
 import { type BetterAuthPlugin } from 'better-auth/types';
 import { emailHarmony } from 'better-auth-harmony';
 import { validateEmail } from 'better-auth-harmony/email';
@@ -24,6 +24,7 @@ import {
   getVerificationEmailTemplate,
   getVerificationOTPEmailTemplate,
 } from '@/libs/better-auth/email-templates';
+import { verifyNexusLegacyPassword } from '@/libs/better-auth/nexus-legacy-password';
 import { emailWhitelist } from '@/libs/better-auth/plugins/email-whitelist';
 import { initBetterAuthSSOProviders } from '@/libs/better-auth/sso';
 import { createSecondaryStorage, getTrustedOrigins } from '@/libs/better-auth/utils/config';
@@ -115,11 +116,15 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
       requireEmailVerification: authEnv.AUTH_EMAIL_VERIFICATION,
       revokeSessionsOnPasswordReset: true,
 
-      // Compatible with bcrypt password hashes migrated from Clerk; after login, you can re-hash in the backend using BetterAuth's default scrypt.
+      // Compatible with legacy hashes during account migration; new passwords still use Better Auth's default scrypt.
       password: {
         // New passwords continue to use BetterAuth's default hash to stay consistent with the official configuration.
         async verify({ hash, password }: { hash: string; password: string }): Promise<boolean> {
           if (!hash) return false;
+
+          if (await verifyNexusLegacyPassword({ hash, password })) {
+            return true;
+          }
 
           // Compatible with bcrypt hashes exported from Clerk (starting with $2a$ or $2b$)
           if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
@@ -263,6 +268,11 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
     plugins: [
       ...customOptions.plugins,
       emailWhitelist(),
+      username({
+        maxUsernameLength: 32,
+        minUsernameLength: 2,
+        usernameValidator: (value) => /^[\w.]+$/.test(value),
+      }),
       expo(),
       emailHarmony({ allowNormalizedSignin: false, validator: customEmailValidator }),
       admin(),

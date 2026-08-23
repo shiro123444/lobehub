@@ -12,6 +12,7 @@ import { type Locales } from '@/locales/resources';
 import { getServerGlobalConfig } from '@/server/globalConfig';
 import { translation } from '@/server/translation';
 import { serializeForHtml } from '@/server/utils/serializeForHtml';
+import { getMarketBaseUrl } from '@/services/_url';
 import {
   type AnalyticsConfig,
   type SPAClientEnv,
@@ -168,7 +169,7 @@ function buildAnalyticsConfig(): AnalyticsConfig {
 
 function buildClientEnv(): SPAClientEnv {
   return {
-    marketBaseUrl: appEnv.MARKET_BASE_URL,
+    marketBaseUrl: getMarketBaseUrl(appEnv.MARKET_BASE_URL),
     pyodideIndexUrl: pythonEnv.NEXT_PUBLIC_PYODIDE_INDEX_URL,
     pyodidePipIndexUrl: pythonEnv.NEXT_PUBLIC_PYODIDE_PIP_INDEX_URL,
     s3FilePath: fileEnv.NEXT_PUBLIC_S3_FILE_PATH,

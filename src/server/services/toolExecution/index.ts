@@ -2,8 +2,9 @@ import { type ChatToolPayload } from '@lobechat/types';
 import { safeParseJSON } from '@lobechat/utils';
 import debug from 'debug';
 
-import { type CloudMCPParams, type ToolCallContent } from '@/libs/mcp';
+import { type CloudMCPParams, type StdioMCPParams, type ToolCallContent } from '@/libs/mcp';
 import { contentBlocksToString } from '@/server/services/mcp/contentProcessor';
+import { mcpProxyService } from '@/server/services/mcpProxy';
 import {
   DEFAULT_TOOL_RESULT_MAX_LENGTH,
   truncateToolResult,
@@ -189,6 +190,11 @@ export class ToolExecutionService {
         return await this.executeCloudMCPTool(payload, context, mcpParams);
       }
 
+      // Check if this is an MCP Proxy connection (server-side stdio for web clients)
+      if ((mcpParams.type as any) === 'mcpProxy') {
+        return await this.executeMcpProxyTool(payload, context, mcpParams);
+      }
+
       // For stdio/http/sse types, use standard MCP service
       const result = await this.mcpService.callTool({
         argsStr: args,
@@ -262,6 +268,60 @@ export class ToolExecutionService {
         content: (error as Error).message,
         error: {
           code: 'CLOUD_MCP_EXECUTION_ERROR',
+          message: (error as Error).message,
+        },
+        success: false,
+      };
+    }
+  }
+
+  private async executeMcpProxyTool(
+    payload: ChatToolPayload,
+    context: ToolExecutionContext,
+    mcpParams: StdioMCPParams,
+  ): Promise<ToolExecutionResult> {
+    const { identifier, apiName, arguments: args } = payload;
+
+    log('Executing MCP Proxy tool: %s:%s via server-side stdio', identifier, apiName);
+
+    try {
+      const parsedArgs = safeParseJSON(args) || {};
+
+      const result = await mcpProxyService.callTool({
+        args: parsedArgs,
+        clientParams: mcpParams,
+        toolName: apiName,
+      });
+
+      // Process content blocks (upload images, etc.)
+      const { processContentBlocks } = await import('@/server/services/mcp/contentProcessor');
+      const { FileService } = await import('@/server/services/file');
+      const fileService = context.userId && context.serverDB
+        ? new FileService(context.serverDB, context.userId)
+        : undefined;
+
+      const newContent = result.isError
+        ? result.content
+        : fileService
+          ? await processContentBlocks(result.content, fileService)
+          : result.content;
+
+      const content = contentBlocksToString(newContent);
+      const state = { ...result, content: newContent };
+
+      log('MCP Proxy tool execution successful for: %s:%s', identifier, apiName);
+
+      return {
+        content,
+        state,
+        success: !result.isError,
+      };
+    } catch (error) {
+      log('MCP Proxy tool execution failed for %s:%s: %O', identifier, apiName, error);
+      return {
+        content: (error as Error).message,
+        error: {
+          code: 'MCP_PROXY_EXECUTION_ERROR',
           message: (error as Error).message,
         },
         success: false,

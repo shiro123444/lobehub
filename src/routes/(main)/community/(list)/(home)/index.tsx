@@ -9,7 +9,7 @@ import { AssistantSorts, McpSorts } from '@/types/discover';
 import Title from '../../components/Title';
 import AssistantList from '../agent/features/List';
 import McpList from '../mcp/features/List';
-import CreatorRewardBanner from './features/CreatorRewardBanner';
+import HeroBanner from '@/features/NexusRegistry/HeroBanner';
 import Loading from './loading';
 
 const HomePage = memo(() => {
@@ -33,7 +33,7 @@ const HomePage = memo(() => {
 
   return (
     <>
-      <CreatorRewardBanner />
+      <HeroBanner />
       <Title more={t('home.more')} moreLink={'/community/agent'}>
         {t('home.featuredAssistants')}
       </Title>

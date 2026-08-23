@@ -3,6 +3,8 @@ import type { EnabledAiModel, ExtendParamsType } from 'model-bank';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
+import { AiModelModel } from '../../../models/aiModel';
+import { users } from '../../../schemas';
 import type { LobeChatDatabase } from '../../../type';
 import { AiInfraRepos } from '../index';
 
@@ -975,6 +977,56 @@ describe('AiInfraRepos', () => {
 
       // custom-model should still be included as appended user model
       expect(result.find((m) => m.id === 'custom-model')).toBeDefined();
+    });
+
+    it('should inherit Nexus platform model overrides before applying user overrides', async () => {
+      const providerId = 'nexus';
+      const platformOwnerId = 'platform-model-owner-enabled';
+      const modelId = 'platform-claude-enabled-models';
+      const repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        platformModelOwnerId: platformOwnerId,
+      });
+
+      await serverDB
+        .insert(users)
+        .values({ id: platformOwnerId, email: `${platformOwnerId}@example.com` })
+        .onConflictDoNothing();
+      await new AiModelModel(serverDB, platformOwnerId).create({
+        displayName: 'Platform Claude',
+        enabled: false,
+        id: modelId,
+        providerId,
+        type: 'chat',
+      });
+
+      vi.spyOn(repo, 'getAiProviderList').mockResolvedValue([
+        { enabled: true, id: providerId, name: 'NEXUS', source: 'builtin' as const },
+      ]);
+      vi.spyOn(repo.aiModelModel, 'getAllModels').mockResolvedValue([
+        {
+          displayName: 'User Claude',
+          enabled: true,
+          id: modelId,
+          providerId,
+          type: 'chat',
+        },
+      ] as EnabledAiModel[]);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue([
+        {
+          displayName: 'Builtin Claude',
+          enabled: true,
+          id: modelId,
+          type: 'chat' as const,
+        },
+      ]);
+
+      const result = await repo.getEnabledModels();
+
+      expect(result.find((m) => m.id === modelId)).toMatchObject({
+        displayName: 'User Claude',
+        enabled: true,
+        providerId,
+      });
     });
   });
 });

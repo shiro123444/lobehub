@@ -23,22 +23,13 @@ const genUserLLMConfig = (specificConfig: Record<any, any>): UserModelProviderCo
 };
 
 export const DEFAULT_LLM_CONFIG = genUserLLMConfig({
-  anthropic: {
-    enabled: true,
-  },
-  deepseek: {
-    enabled: true,
-  },
-  google: {
-    enabled: true,
-  },
   lmstudio: {
     fetchOnClient: true,
   },
+  nexus: {
+    enabled: true,
+  },
   ollama: {
     fetchOnClient: true,
-  },
-  openai: {
-    enabled: true,
   },
 });

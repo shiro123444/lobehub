@@ -4,8 +4,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { CheckUserResponseData } from '@/app/(backend)/api/auth/check-user/route';
-import type { ResolveUsernameResponseData } from '@/app/(backend)/api/auth/resolve-username/route';
+import type { CheckUserResponseData } from '@/app/(backend)/api/auth-check-user/route';
+import type { ResolveUsernameResponseData } from '@/app/(backend)/api/auth-resolve-username/route';
 import { useBusinessSignin } from '@/business/client/hooks/useBusinessSignin';
 import { message } from '@/components/AntdStaticMethods';
 import { trackLoginOrSignupClicked } from '@/features/User/UserLoginOrSignup/trackLoginOrSignupClicked';
@@ -28,6 +28,26 @@ interface ResolvedEmailResult {
   email: string;
   identifierType: 'email' | 'username';
 }
+
+const resolveCallbackUrl = (value?: string | null) => {
+  if (!value) return { auth: '/', navigate: '/' };
+
+  if (value.startsWith('/') && !value.startsWith('//')) {
+    return { auth: value, navigate: value };
+  }
+
+  try {
+    const url = new URL(value);
+
+    if (typeof window !== 'undefined' && url.origin === window.location.origin) {
+      return { auth: `${url.pathname}${url.search}${url.hash}`, navigate: value };
+    }
+  } catch {
+    // Ignore malformed callback URLs and fall back to root for Better Auth.
+  }
+
+  return { auth: '/', navigate: value };
+};
 
 export const useSignIn = () => {
   const { t } = useTranslation('auth');
@@ -69,8 +89,11 @@ export const useSignIn = () => {
           .catch(() => null));
       if (!emailValue) return;
 
-      const callbackUrl = searchParams.get('callbackUrl') || '/';
-      const { error } = await signIn.magicLink({ callbackURL: callbackUrl, email: emailValue });
+      const callbackUrl = resolveCallbackUrl(searchParams.get('callbackUrl'));
+      const { error } = await signIn.magicLink({
+        callbackURL: callbackUrl.auth,
+        email: emailValue,
+      });
       if (error) {
         message.error(error.message || t('betterAuth.signin.magicLinkError'));
         return;
@@ -100,7 +123,7 @@ export const useSignIn = () => {
     }
 
     try {
-      const response = await fetch('/api/auth/resolve-username', {
+      const response = await fetch('/api/auth-resolve-username', {
         body: JSON.stringify({ username: trimmedIdentifier }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
@@ -127,7 +150,7 @@ export const useSignIn = () => {
       if (!resolvedEmail) return;
 
       const { email: targetEmail, identifierType } = resolvedEmail;
-      const response = await fetch('/api/auth/check-user', {
+      const response = await fetch('/api/auth-check-user', {
         body: JSON.stringify({ email: targetEmail }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
@@ -139,7 +162,7 @@ export const useSignIn = () => {
           message.error(t('betterAuth.errors.usernameNotRegistered'));
           return;
         }
-        const callbackUrl = searchParams.get('callbackUrl') || '/';
+        const callbackUrl = resolveCallbackUrl(searchParams.get('callbackUrl')).navigate;
         router.push(
           `/signup?email=${encodeURIComponent(targetEmail)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
         );
@@ -172,19 +195,18 @@ export const useSignIn = () => {
     await trackLoginOrSignupClicked({ spm: 'signin.password_step.submit' });
 
     try {
-      const callbackUrl = searchParams.get('callbackUrl') || '/';
+      const callbackUrl = resolveCallbackUrl(searchParams.get('callbackUrl'));
       const result = await signIn.email(
-        { callbackURL: callbackUrl, email, password: values.password },
+        { callbackURL: callbackUrl.auth, email, password: values.password },
         {
           onError: (ctx) => {
-            console.error('Sign in error:', ctx.error);
             if (ctx.error.status === 403) {
               router.push(
-                `/verify-email?email=${encodeURIComponent(email)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
+                `/verify-email?email=${encodeURIComponent(email)}&callbackUrl=${encodeURIComponent(callbackUrl.navigate)}`,
               );
             }
           },
-          onSuccess: () => router.push(callbackUrl),
+          onSuccess: () => router.push(callbackUrl.navigate),
         },
       );
 

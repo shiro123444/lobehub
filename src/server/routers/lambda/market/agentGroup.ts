@@ -3,12 +3,16 @@ import debug from 'debug';
 import { customAlphabet } from 'nanoid/non-secure';
 import { z } from 'zod';
 
+import { appEnv } from '@/envs/app';
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { marketSDK, marketUserInfo, serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { type TrustedClientUserInfo } from '@/libs/trusted-client';
 import { generateTrustedClientToken } from '@/libs/trusted-client';
+import { getMarketBaseUrl } from '@/services/_url';
 
-const MARKET_BASE_URL = process.env.MARKET_BASE_URL || 'https://market.lobehub.com';
+const MARKET_BASE_URL = getMarketBaseUrl();
+
+const getAppOrigin = () => appEnv.APP_URL?.replace(/\/+$/, '') || 'https://lobehub.com';
 
 interface MarketUserInfo {
   accountId: number;
@@ -555,7 +559,7 @@ export const agentGroupRouter = router({
           category: group.category,
           createdAt: group.createdAt,
           description: group.description || '',
-          homepage: `https://lobehub.com/discover/group_agent/${group.identifier}`,
+          homepage: `${getAppOrigin()}/discover/group_agent/${group.identifier}`,
           identifier: group.identifier,
           installCount: group.installCount || 0,
           isFeatured: group.isFeatured || false,

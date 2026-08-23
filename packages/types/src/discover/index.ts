@@ -14,13 +14,16 @@ export * from './skills';
 
 export enum DiscoverTab {
   Assistants = 'agent',
+  Analytics = 'analytics',
   GroupAgents = 'group_agent',
   Home = 'home',
   Mcp = 'mcp',
   Models = 'model',
   Plugins = 'plugin',
   Providers = 'provider',
+  Review = 'review',
   Skills = 'skill',
+  Submissions = 'submissions',
   User = 'user',
 }
 

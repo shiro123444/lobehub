@@ -27,8 +27,9 @@ beforeEach(() => {
 describe('AiInfraRepos', () => {
   describe('getAiProviderList', () => {
     it('should merge builtin and user providers correctly', async () => {
+      const visibleProviderId = DEFAULT_MODEL_PROVIDER_LIST[0].id;
       const mockUserProviders = [
-        { id: 'openai', enabled: true, name: 'Custom OpenAI' },
+        { id: visibleProviderId, enabled: true, name: 'Custom Nexus' },
         { id: 'custom', enabled: true, name: 'Custom Provider' },
       ] as AiProviderListItem[];
 
@@ -39,8 +40,9 @@ describe('AiInfraRepos', () => {
       expect(result).toBeDefined();
       expect(result.length).toBeGreaterThan(0);
       // Verify the merge logic
-      const openaiProvider = result.find((p) => p.id === 'openai');
-      expect(openaiProvider).toMatchObject({ enabled: true, name: 'Custom OpenAI' });
+      const visibleProvider = result.find((p) => p.id === visibleProviderId);
+      expect(visibleProvider).toMatchObject({ enabled: true, name: 'Custom Nexus' });
+      expect(result.some((p) => p.id === 'custom')).toBe(false);
     });
 
     it('should sort providers according to DEFAULT_MODEL_PROVIDER_LIST order', async () => {

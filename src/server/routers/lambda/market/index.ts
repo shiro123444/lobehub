@@ -8,13 +8,19 @@ import { publicProcedure, router } from '@/libs/trpc/lambda';
 import { marketUserInfo, serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { DiscoverService } from '@/server/services/discover';
 import { MarketService } from '@/server/services/market';
+import { NexusRegistryService } from '@/server/services/nexusRegistry';
 import {
   AssistantSorts,
+  type DiscoverMcpItem,
+  type DiscoverPluginItem,
   McpConnectionType,
+  type McpListResponse,
   McpSorts,
   ModelSorts,
+  type PluginListResponse,
   PluginSorts,
   ProviderSorts,
+  type SkillCategoryItem,
 } from '@/types/discover';
 
 import { agentRouter } from './agent';
@@ -29,6 +35,111 @@ import { userRouter } from './user';
 const log = debug('lambda-router:market');
 
 const marketSourceSchema = z.enum(['legacy', 'new']);
+
+const getMergedPageParams = (input?: { page?: number; pageSize?: number }) => {
+  const page = Math.max(1, Number(input?.page || 1));
+  const pageSize = Math.max(1, Number(input?.pageSize || 20));
+
+  return {
+    fetchPageSize: Math.min(100, page * pageSize),
+    page,
+    pageSize,
+  };
+};
+
+const mergeCategoryItems = (
+  localCategories: SkillCategoryItem[] = [],
+  upstreamCategories: SkillCategoryItem[] = [],
+): SkillCategoryItem[] => {
+  const map = new Map<string, SkillCategoryItem>();
+
+  for (const item of upstreamCategories) {
+    map.set(item.category, { ...item });
+  }
+
+  for (const item of localCategories) {
+    const current = map.get(item.category);
+    map.set(item.category, {
+      category: item.category,
+      count: (current?.count ?? 0) + item.count,
+    });
+  }
+
+  return [...map.values()];
+};
+
+const mergeStringCategories = (
+  localCategories: string[] = [],
+  upstreamCategories: string[] = [],
+): string[] => {
+  return [...new Set([...localCategories, ...upstreamCategories].filter(Boolean))];
+};
+
+const mergePagedItems = <T extends { identifier: string }>(
+  localItems: T[] = [],
+  upstreamItems: T[] = [],
+  params: { page: number; pageSize: number },
+): T[] => {
+  const merged = new Map<string, T>();
+
+  for (const item of localItems) {
+    merged.set(item.identifier, item);
+  }
+
+  for (const item of upstreamItems) {
+    if (!merged.has(item.identifier)) merged.set(item.identifier, item);
+  }
+
+  const offset = (params.page - 1) * params.pageSize;
+  return [...merged.values()].slice(offset, offset + params.pageSize);
+};
+
+const mergeMcpLists = (
+  localList: McpListResponse,
+  upstreamList: McpListResponse | undefined,
+  params: { page: number; pageSize: number },
+): McpListResponse => {
+  const duplicateCount = new Set(localList.items.map((item) => item.identifier));
+  const fetchedDuplicateCount = (upstreamList?.items ?? []).filter((item) =>
+    duplicateCount.has(item.identifier),
+  ).length;
+  const totalCount = Math.max(
+    0,
+    localList.totalCount + (upstreamList?.totalCount ?? 0) - fetchedDuplicateCount,
+  );
+
+  return {
+    categories: mergeStringCategories(localList.categories, upstreamList?.categories),
+    currentPage: params.page,
+    items: mergePagedItems<DiscoverMcpItem>(localList.items, upstreamList?.items, params),
+    pageSize: params.pageSize,
+    totalCount,
+    totalPages: Math.ceil(totalCount / params.pageSize),
+  };
+};
+
+const mergePluginLists = (
+  localList: PluginListResponse,
+  upstreamList: PluginListResponse | undefined,
+  params: { page: number; pageSize: number },
+): PluginListResponse => {
+  const duplicateCount = new Set(localList.items.map((item) => item.identifier));
+  const fetchedDuplicateCount = (upstreamList?.items ?? []).filter((item) =>
+    duplicateCount.has(item.identifier),
+  ).length;
+  const totalCount = Math.max(
+    0,
+    localList.totalCount + (upstreamList?.totalCount ?? 0) - fetchedDuplicateCount,
+  );
+
+  return {
+    currentPage: params.page,
+    items: mergePagedItems<DiscoverPluginItem>(localList.items, upstreamList?.items, params),
+    pageSize: params.pageSize,
+    totalCount,
+    totalPages: Math.ceil(totalCount / params.pageSize),
+  };
+};
 
 // Public procedure with optional user info for trusted client token
 const marketProcedure = publicProcedure
@@ -45,6 +156,7 @@ const marketProcedure = publicProcedure
           accessToken: ctx.marketAccessToken,
           userInfo: ctx.marketUserInfo,
         }),
+        nexusRegistryService: new NexusRegistryService(ctx.serverDB),
       },
     });
   });
@@ -311,7 +423,25 @@ export const marketRouter = router({
       log('getMcpCategories input: %O', input);
 
       try {
-        return await ctx.discoverService.getMcpCategories(input);
+        const [localResult, upstreamResult] = await Promise.allSettled([
+          ctx.nexusRegistryService.listCategories('mcp', {
+            q: input?.q,
+          }),
+          ctx.discoverService.getMcpCategories(input),
+        ]);
+        const localCategories = localResult.status === 'fulfilled' ? localResult.value : [];
+        if (localResult.status === 'rejected') {
+          log('NEXUS registry mcp categories fallback: %O', localResult.reason);
+        }
+
+        if (upstreamResult.status === 'fulfilled') {
+          return mergeCategoryItems(localCategories, upstreamResult.value);
+        }
+
+        log('Error fetching upstream mcp categories: %O', upstreamResult.reason);
+        if (localCategories.length > 0) return localCategories;
+
+        throw upstreamResult.reason;
       } catch (error) {
         log('Error fetching mcp categories: %O', error);
         throw new TRPCError({
@@ -333,6 +463,14 @@ export const marketRouter = router({
       log('getMcpDetail input: %O', input);
 
       try {
+        const localDetail = await ctx.nexusRegistryService
+          .getMcpDetail(input.identifier)
+          .catch((error) => {
+            log('NEXUS registry mcp detail fallback: %O', error);
+            return undefined;
+          });
+        if (localDetail) return localDetail;
+
         return await ctx.discoverService.getMcpDetail(input);
       } catch (error) {
         console.error('Error fetching mcp detail: %O', error);
@@ -362,7 +500,33 @@ export const marketRouter = router({
       log('getMcpList input: %O', input);
 
       try {
-        return await ctx.discoverService.getMcpList(input);
+        const { fetchPageSize, page, pageSize } = getMergedPageParams(input);
+        const localList = await ctx.nexusRegistryService
+          .listMcp({
+            ...(input ?? {}),
+            page: 1,
+            pageSize: fetchPageSize,
+          })
+          .catch((error) => {
+            log('NEXUS registry mcp list fallback: %O', error);
+            return undefined;
+          });
+
+        if (!localList || localList.totalCount === 0)
+          return await ctx.discoverService.getMcpList(input);
+
+        const upstreamList = await ctx.discoverService
+          .getMcpList({
+            ...(input ?? {}),
+            page: 1,
+            pageSize: fetchPageSize,
+          })
+          .catch((error) => {
+            log('Error fetching upstream mcp list, using NEXUS registry only: %O', error);
+            return undefined;
+          });
+
+        return mergeMcpLists(localList, upstreamList, { page, pageSize });
       } catch (error) {
         log('Error fetching mcp list: %O', error);
         throw new TRPCError({
@@ -385,6 +549,20 @@ export const marketRouter = router({
       log('getMcpManifest input: %O', input);
 
       try {
+        const localItem = await ctx.nexusRegistryService
+          .getByIdentifier({
+            identifier: input.identifier,
+            kind: 'mcp',
+            status: 'active',
+          })
+          .catch((error) => {
+            log('NEXUS registry mcp manifest fallback: %O', error);
+            return undefined;
+          });
+        if (localItem && Object.keys(localItem.manifest ?? {}).length > 0) {
+          return localItem.manifest;
+        }
+
         return await ctx.discoverService.getMcpManifest(input);
       } catch (error) {
         log('Error fetching mcp manifest: %O', error);
@@ -495,7 +673,25 @@ export const marketRouter = router({
       log('getPluginCategories input: %O', input);
 
       try {
-        return await ctx.discoverService.getPluginCategories(input);
+        const [localResult, upstreamResult] = await Promise.allSettled([
+          ctx.nexusRegistryService.listCategories('plugin', {
+            q: input?.q,
+          }),
+          ctx.discoverService.getPluginCategories(input),
+        ]);
+        const localCategories = localResult.status === 'fulfilled' ? localResult.value : [];
+        if (localResult.status === 'rejected') {
+          log('NEXUS registry plugin categories fallback: %O', localResult.reason);
+        }
+
+        if (upstreamResult.status === 'fulfilled') {
+          return mergeCategoryItems(localCategories, upstreamResult.value);
+        }
+
+        log('Error fetching upstream plugin categories: %O', upstreamResult.reason);
+        if (localCategories.length > 0) return localCategories;
+
+        throw upstreamResult.reason;
       } catch (error) {
         log('Error fetching plugin categories: %O', error);
         throw new TRPCError({
@@ -517,6 +713,14 @@ export const marketRouter = router({
       log('getPluginDetail input: %O', input);
 
       try {
+        const localDetail = await ctx.nexusRegistryService
+          .getPluginDetail(input.identifier)
+          .catch((error) => {
+            log('NEXUS registry plugin detail fallback: %O', error);
+            return undefined;
+          });
+        if (localDetail) return localDetail;
+
         return await ctx.discoverService.getPluginDetail(input);
       } catch (error) {
         log('Error fetching plugin details: %O', error);
@@ -559,7 +763,33 @@ export const marketRouter = router({
       log('getPluginList input: %O', input);
 
       try {
-        return await ctx.discoverService.getPluginList(input);
+        const { fetchPageSize, page, pageSize } = getMergedPageParams(input);
+        const localList = await ctx.nexusRegistryService
+          .listPlugins({
+            ...(input ?? {}),
+            page: 1,
+            pageSize: fetchPageSize,
+          })
+          .catch((error) => {
+            log('NEXUS registry plugin list fallback: %O', error);
+            return undefined;
+          });
+
+        if (!localList || localList.totalCount === 0)
+          return await ctx.discoverService.getPluginList(input);
+
+        const upstreamList = await ctx.discoverService
+          .getPluginList({
+            ...(input ?? {}),
+            page: 1,
+            pageSize: fetchPageSize,
+          })
+          .catch((error) => {
+            log('Error fetching upstream plugin list, using NEXUS registry only: %O', error);
+            return undefined;
+          });
+
+        return mergePluginLists(localList, upstreamList, { page, pageSize });
       } catch (error) {
         log('Error fetching plugin list: %O', error);
         throw new TRPCError({

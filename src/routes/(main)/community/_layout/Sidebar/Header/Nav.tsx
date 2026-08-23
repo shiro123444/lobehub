@@ -2,7 +2,7 @@
 
 import { Flexbox } from '@lobehub/ui';
 import { McpIcon, ProviderIcon, SkillsIcon } from '@lobehub/ui/icons';
-import { Bot, Brain, ShapesIcon } from 'lucide-react';
+import { BarChart3, Bot, Brain, ClipboardList, ShapesIcon, ShieldCheck } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
@@ -39,6 +39,24 @@ const Nav = memo(() => {
         key: DiscoverTab.Home,
         title: t('tab.home'),
         url: '/community',
+      },
+      {
+        icon: BarChart3,
+        key: DiscoverTab.Analytics,
+        title: t('tab.analytics'),
+        url: '/community/analytics',
+      },
+      {
+        icon: ClipboardList,
+        key: DiscoverTab.Submissions,
+        title: t('tab.submissions'),
+        url: '/community/submissions',
+      },
+      {
+        icon: ShieldCheck,
+        key: DiscoverTab.Review,
+        title: t('tab.review'),
+        url: '/community/review',
       },
       {
         icon: Bot,

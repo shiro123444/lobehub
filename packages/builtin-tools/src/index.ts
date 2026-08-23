@@ -39,7 +39,6 @@ export const defaultToolIds = [
   KnowledgeBaseManifest.identifier,
   MemoryManifest.identifier,
   LocalSystemManifest.identifier,
-  CloudSandboxManifest.identifier,
   TopicReferenceManifest.identifier,
   AgentDocumentsManifest.identifier,
   TaskManifest.identifier,
@@ -99,7 +98,6 @@ export const chatModeAllowedToolIds = [
  * `src/helpers/toolEngineering/index.ts`.
  */
 export const runtimeManagedToolIds = [
-  CloudSandboxManifest.identifier,
   KnowledgeBaseManifest.identifier,
   LocalSystemManifest.identifier,
   MemoryManifest.identifier,
@@ -163,6 +161,7 @@ export const builtinTools: LobeBuiltinTool[] = [
     type: 'builtin',
   },
   {
+    discoverable: false,
     hidden: true,
     identifier: CloudSandboxManifest.identifier,
     manifest: CloudSandboxManifest,

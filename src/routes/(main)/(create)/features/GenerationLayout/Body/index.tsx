@@ -64,7 +64,12 @@ const Body = memo<GenerationLayoutCommonProps>((props) => {
             </Text>
           }
         >
-          <List namespace={namespace} useStore={useStore} viewModeStatusKey={viewModeStatusKey} />
+          <List
+            breadcrumb={props.breadcrumb}
+            namespace={namespace}
+            useStore={useStore}
+            viewModeStatusKey={viewModeStatusKey}
+          />
         </AccordionItem>
       </Accordion>
     </Flexbox>

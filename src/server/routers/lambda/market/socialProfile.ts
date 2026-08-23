@@ -4,10 +4,11 @@ import { z } from 'zod';
 
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { marketSDK, marketUserInfo, serverDatabase } from '@/libs/trpc/lambda/middleware';
+import { getMarketBaseUrl } from '@/services/_url';
 
 const log = debug('lambda-router:market:socialProfile');
 
-const MARKET_BASE_URL = process.env.MARKET_BASE_URL || 'https://market.lobehub.com';
+const MARKET_BASE_URL = getMarketBaseUrl();
 
 // Authenticated procedure for social profile operations
 const socialProfileAuthProcedure = authedProcedure
@@ -77,7 +78,7 @@ export const socialProfileRouter = router({
               const error = await response.json().catch(() => ({}));
               errors.push(error.error || `Failed to claim skill ${skillId}`);
             }
-          } catch (err) {
+          } catch {
             errors.push(`Failed to claim skill ${skillId}`);
           }
         }
@@ -103,7 +104,7 @@ export const socialProfileRouter = router({
               const error = await response.json().catch(() => ({}));
               errors.push(error.error || `Failed to claim plugin ${pluginId}`);
             }
-          } catch (err) {
+          } catch {
             errors.push(`Failed to claim plugin ${pluginId}`);
           }
         }

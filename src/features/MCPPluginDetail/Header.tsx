@@ -34,6 +34,8 @@ import Scores from '@/features/MCP/Scores';
 import { getLanguageColor, getRecommendedDeployment } from '@/features/MCP/utils';
 import { useCategory } from '@/hooks/useMCPCategory';
 import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
+import { useServerConfigStore } from '@/store/serverConfig';
+import { serverConfigSelectors } from '@/store/serverConfig/selectors';
 import { socialService } from '@/services/social';
 
 import InstallationIcon from '../../components/MCPDepsIcon';
@@ -81,6 +83,9 @@ const Header = memo<{ inModal?: boolean; mobile?: boolean }>(({ mobile: isMobile
   } = useDetailContext();
   const { mobile = isMobile } = useResponsive();
   const { isAuthenticated, signIn, session } = useMarketAuth();
+  const enableMarketTrustedClient = useServerConfigStore(
+    serverConfigSelectors.enableMarketTrustedClient,
+  );
   const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   // Set access token for social service
@@ -98,7 +103,8 @@ const Header = memo<{ inModal?: boolean; mobile?: boolean }>(({ mobile: isMobile
   const isFavorited = favoriteStatus?.isFavorited ?? false;
 
   const handleFavoriteClick = async () => {
-    if (!isAuthenticated) {
+    // Trusted client mode: skip login prompt
+    if (!isAuthenticated && !enableMarketTrustedClient) {
       await signIn();
       return;
     }

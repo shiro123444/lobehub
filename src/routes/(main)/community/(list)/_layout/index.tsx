@@ -1,6 +1,8 @@
 import { Flexbox } from '@lobehub/ui';
 import { Outlet } from 'react-router-dom';
+import { Suspense } from 'react';
 
+import BrandTextLoading from '@/components/Loading/BrandTextLoading';
 import WideScreenContainer from '@/features/WideScreenContainer';
 
 import { MAX_WIDTH } from '../../features/const';
@@ -24,7 +26,9 @@ const Layout = () => {
           }}
         >
           <Flexbox gap={16} style={{ paddingBlockEnd: 40 }} width={'100%'}>
-            <Outlet />
+            <Suspense fallback={<BrandTextLoading debugId="CommunityLayout" />}>
+              <Outlet />
+            </Suspense>
           </Flexbox>
           <div className={styles.spacer} />
           <Footer />

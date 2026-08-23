@@ -5,6 +5,7 @@ import { memo } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import NavHeader from '@/features/NavHeader';
+import CreateButton from '@/routes/(main)/community/features/CreateButton';
 import StoreSearchBar from '@/routes/(main)/community/features/Search';
 import UserAvatar from '@/routes/(main)/community/features/UserAvatar';
 
@@ -27,6 +28,7 @@ const Header = memo(() => {
       right={
         !isHome && (
           <>
+            <CreateButton />
             <SortButton />
             <UserAvatar />
           </>
@@ -34,6 +36,7 @@ const Header = memo(() => {
       }
       styles={{
         left: { flex: 1 },
+        right: { flex: 'none', minWidth: 260 },
       }}
     />
   );

@@ -233,6 +233,29 @@ export class SkillParser {
       };
     }
 
+    const isValidSkillPath = (path: string) => {
+      if (!path.endsWith('/SKILL.md')) return false;
+      const segments = path.split('/');
+      return !segments.some(
+        (segment) =>
+          segment.startsWith('.') || segment === '__MACOSX' || segment === 'node_modules',
+      );
+    };
+    const recursiveMatch = Object.keys(unzipped)
+      .filter(isValidSkillPath)
+      .sort((a, b) => {
+        const depthDiff = a.split('/').length - b.split('/').length;
+        if (depthDiff !== 0) return depthDiff;
+        return a.localeCompare(b);
+      })[0];
+
+    if (recursiveMatch) {
+      return {
+        skillMdContent: decoder.decode(unzipped[recursiveMatch]),
+        skillMdPath: recursiveMatch,
+      };
+    }
+
     return { skillMdContent: '', skillMdPath: null };
   }
 

@@ -470,6 +470,31 @@ Root content`;
 
       expect(result.manifest.name).toBe('root-skill');
     });
+
+    it('should discover SKILL.md in a nested non-hidden skill directory', async () => {
+      const skillMd = `---
+name: impeccable
+description: Design frontend interfaces
+---
+Designs and iterates production-grade frontend interfaces.`;
+
+      const testFiles = {
+        'repo-main/.agents/skills/ignored/SKILL.md': new TextEncoder().encode(
+          '---\nname: ignored\ndescription: ignored\n---\nIgnored',
+        ),
+        'repo-main/README.md': new TextEncoder().encode('# Repo'),
+        'repo-main/skill/NOTICE.md': new TextEncoder().encode('Notice'),
+        'repo-main/skill/SKILL.md': new TextEncoder().encode(skillMd),
+      };
+
+      const zipped = await createZip(testFiles);
+      const result = await parser.parseZipPackage(Buffer.from(zipped));
+
+      expect(result.manifest.name).toBe('impeccable');
+      expect(result.content).toBe('Designs and iterates production-grade frontend interfaces.');
+      expect(result.resources.has('NOTICE.md')).toBe(true);
+      expect(result.resources.has('README.md')).toBe(false);
+    });
   });
 
   describe('parseZipPackage with repackSkillZip', () => {

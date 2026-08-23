@@ -5,12 +5,12 @@ import { z } from 'zod';
 
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { marketSDK, marketUserInfo, serverDatabase } from '@/libs/trpc/lambda/middleware';
-import { type TrustedClientUserInfo } from '@/libs/trusted-client';
-import { generateTrustedClientToken } from '@/libs/trusted-client';
+import { generateTrustedClientToken, type TrustedClientUserInfo } from '@/libs/trusted-client';
 import { normalizeLocale } from '@/locales/resources';
+import { getMarketBaseUrl } from '@/services/_url';
 import type { AgentForkBatchResult, AgentForkResponse } from '@/types/discover';
 
-const MARKET_BASE_URL = process.env.MARKET_BASE_URL || 'https://market.lobehub.com';
+const MARKET_BASE_URL = getMarketBaseUrl();
 
 interface MarketUserInfo {
   accountId: number;

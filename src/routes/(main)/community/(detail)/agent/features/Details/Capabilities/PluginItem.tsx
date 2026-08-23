@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import urlJoin from 'url-join';
 
+import { useAppOrigin } from '@/hooks/useAppOrigin';
 import { useDiscoverStore } from '@/store/discover';
 
 /**
@@ -75,6 +76,7 @@ interface PluginItemProps {
 
 const PluginItem = memo<PluginItemProps>(({ identifier }) => {
   const { t } = useTranslation('discover');
+  const appOrigin = useAppOrigin();
   const usePluginDetail = useDiscoverStore((s) => s.usePluginDetail);
   const { data: apiData, isLoading } = usePluginDetail({ identifier, withManifest: false });
 
@@ -124,7 +126,7 @@ const PluginItem = memo<PluginItemProps>(({ identifier }) => {
         category: undefined,
         createdAt: '',
         description: lobehubSkill.description,
-        homepage: lobehubSkill.authorUrl || 'https://lobehub.com',
+        homepage: lobehubSkill.authorUrl || appOrigin,
         identifier: lobehubSkill.id,
         manifest: undefined,
         related: [],
@@ -143,7 +145,7 @@ const PluginItem = memo<PluginItemProps>(({ identifier }) => {
         category: undefined,
         createdAt: '',
         description: builtinTool.manifest.meta.description || '',
-        homepage: 'https://lobehub.com',
+        homepage: appOrigin,
         identifier: builtinTool.identifier,
         manifest: undefined,
         related: [],

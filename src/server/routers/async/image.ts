@@ -26,6 +26,7 @@ import { GenerationModel } from '@/database/models/generation';
 import { GenerationBatchModel } from '@/database/models/generationBatch';
 import { asyncAuthedProcedure, asyncRouter as router } from '@/libs/trpc/async';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
+import { FileService } from '@/server/services/file';
 import { GenerationService } from '@/server/services/generation';
 import { sanitizeFileName } from '@/utils/sanitizeFileName';
 
@@ -41,6 +42,7 @@ const imageProcedure = asyncAuthedProcedure.use(async (opts) => {
   return opts.next({
     ctx: {
       asyncTaskModel: new AsyncTaskModel(ctx.serverDB, ctx.userId),
+      fileService: new FileService(ctx.serverDB, ctx.userId),
       fileModel: new FileModel(ctx.serverDB, ctx.userId),
       generationBatchModel: new GenerationBatchModel(ctx.serverDB, ctx.userId),
       generationModel: new GenerationModel(ctx.serverDB, ctx.userId),
@@ -76,6 +78,42 @@ const checkAbortSignal = (signal: AbortSignal) => {
   if (signal.aborted) {
     throw new Error('Operation was aborted');
   }
+};
+
+const isDataUri = (url: string) => url.startsWith('data:');
+const isHttpUrl = (url: string) => url.startsWith('http://') || url.startsWith('https://');
+
+const resolveFileReferenceUrl = async (
+  fileService: FileService,
+  url?: unknown,
+): Promise<unknown> => {
+  if (typeof url !== 'string' || !url || isDataUri(url) || isHttpUrl(url)) return url;
+
+  const fullUrl = await fileService.getFullFileUrl(url);
+  return fullUrl || url;
+};
+
+const resolveImageReferenceParams = async (
+  fileService: FileService,
+  params: z.infer<typeof createImageInputSchema>['params'],
+) => {
+  const updates: Record<string, unknown> = {};
+
+  if (typeof (params as any).imageUrl === 'string') {
+    updates.imageUrl = await resolveFileReferenceUrl(fileService, (params as any).imageUrl);
+  }
+
+  if (Array.isArray(params.imageUrls)) {
+    updates.imageUrls = await Promise.all(
+      params.imageUrls.map((url) => resolveFileReferenceUrl(fileService, url)),
+    );
+  }
+
+  if (typeof (params as any).endImageUrl === 'string') {
+    updates.endImageUrl = await resolveFileReferenceUrl(fileService, (params as any).endImageUrl);
+  }
+
+  return Object.keys(updates).length > 0 ? { ...params, ...updates } : params;
 };
 
 /**
@@ -223,15 +261,8 @@ export const imageRouter = router({
     .use(createImageBusinessMiddleware)
     .input(createImageInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const {
-        taskId,
-        generationId,
-        generationBatchId,
-        generationTopicId,
-        provider,
-        model,
-        params,
-      } = input;
+      const { taskId, generationId, generationBatchId, generationTopicId, provider, model } = input;
+      const params = await resolveImageReferenceParams(ctx.fileService, input.params);
 
       log('Starting async image generation: %O', {
         generationId,

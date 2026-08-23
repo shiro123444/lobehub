@@ -2,7 +2,6 @@ import { Flexbox } from '@lobehub/ui';
 import { cssVar, useTheme } from 'antd-style';
 import { memo, useMemo } from 'react';
 
-import { isCustomBranding } from '@/const/version';
 import NavHeader from '@/features/NavHeader';
 
 import CreateButton from '../features/CreateButton';
@@ -26,14 +25,14 @@ const Header = memo(() => {
       style={cssVariables}
       right={
         <Flexbox horizontal align="center" gap={8}>
-          {!isCustomBranding && <CreateButton />}
+          <CreateButton />
           <UserAvatar />
         </Flexbox>
       }
       styles={{
         center: { flex: 1, maxWidth: 720 },
         left: { flex: 1, maxWidth: 120 },
-        right: { flex: 1, maxWidth: 160 },
+        right: { flex: 'none', minWidth: 236 },
       }}
     >
       <StoreSearchBar />

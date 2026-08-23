@@ -5,7 +5,6 @@ import { Avatar, Button, Flexbox, Tag } from '@lobehub/ui';
 import { CheckCircle, Download, Package, Search } from 'lucide-react';
 import { memo, useState } from 'react';
 
-import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
 import { useAgentStore } from '@/store/agent';
 import { useToolStore } from '@/store/tool';
 import { mcpStoreSelectors, pluginSelectors } from '@/store/tool/selectors';
@@ -17,7 +16,6 @@ interface ToolItemProps {
 }
 
 const ToolItem = memo<ToolItemProps>(({ tool }) => {
-  const { isAuthenticated, signIn } = useMarketAuth();
   const [localInstalling, setLocalInstalling] = useState(false);
 
   const [installed, installing, installMCPPlugin, cancelInstallMCPPlugin] = useToolStore((s) => [
@@ -29,19 +27,9 @@ const ToolItem = memo<ToolItemProps>(({ tool }) => {
 
   const togglePlugin = useAgentStore((s) => s.togglePlugin);
 
-  const isCloudMcp = !!(tool.cloudEndPoint || tool.haveCloudEndpoint);
   const isInstalling = installing || localInstalling;
 
   const handleInstall = async () => {
-    // If this is a cloud MCP and user is not authenticated, request authorization first
-    if (isCloudMcp && !isAuthenticated) {
-      try {
-        await signIn();
-      } catch {
-        return;
-      }
-    }
-
     setLocalInstalling(true);
     try {
       const isSuccess = await installMCPPlugin(tool.identifier);

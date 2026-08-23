@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { message } from '@/components/AntdStaticMethods';
+import { useAppOrigin } from '@/hooks/useAppOrigin';
 import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
 import { lambdaClient } from '@/libs/trpc/client';
 import { useAgentGroupStore } from '@/store/agentGroup';
@@ -25,6 +26,7 @@ export interface CheckOwnershipResult {
 
 export const useMarketGroupPublish = ({ action, onSuccess }: UseMarketGroupPublishOptions) => {
   const { t } = useTranslation('setting');
+  const appOrigin = useAppOrigin();
   const [isPublishing, setIsPublishing] = useState(false);
   const [isCheckingOwnership, setIsCheckingOwnership] = useState(false);
   const isPublishingRef = useRef(false);
@@ -127,7 +129,7 @@ export const useMarketGroupPublish = ({ action, onSuccess }: UseMarketGroupPubli
         name: agent.title || 'Untitled Agent',
         role: agent.isSupervisor ? ('supervisor' as const) : ('participant' as const),
         // TODO: Construct proper A2A URL for the agent
-        url: `https://api.lobehub.com/a2a/agents/${agent.id}`,
+        url: `${appOrigin}/a2a/agents/${agent.id}`,
       }));
 
       // Use tRPC publishOrCreate

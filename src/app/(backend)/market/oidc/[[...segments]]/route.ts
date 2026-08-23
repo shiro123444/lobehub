@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server';
 
 import { getTrustedClientTokenForSession } from '@/libs/trusted-client';
 import { MarketService } from '@/server/services/market';
+import { getMarketBaseUrl } from '@/services/_url';
 
-const MARKET_BASE_URL = process.env.MARKET_BASE_URL || 'https://market.lobehub.com';
+const MARKET_BASE_URL = getMarketBaseUrl();
 
 type RouteContext = {
   params: Promise<{

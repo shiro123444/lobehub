@@ -77,6 +77,7 @@ describe('useSignUp', () => {
       confirmPassword: 'Password123!',
       email: 'new@example.com',
       password: 'Password123!',
+      username: 'newuser',
     };
 
     it('should call signUp.email with correct params', async () => {
@@ -91,8 +92,9 @@ describe('useSignUp', () => {
       expect(mockSignUpEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'new@example.com',
-          name: 'new',
+          name: 'newuser',
           password: 'Password123!',
+          username: 'newuser',
         }),
       );
     });
@@ -142,7 +144,7 @@ describe('useSignUp', () => {
       );
     });
 
-    it('should derive username from email prefix', async () => {
+    it('should use the provided username instead of deriving it from email', async () => {
       mockSignUpEmail.mockResolvedValue({ error: null });
 
       const { result } = renderHook(() => useSignUp());
@@ -151,7 +153,9 @@ describe('useSignUp', () => {
         await result.current.onSubmit({ ...validValues, email: 'john.doe@gmail.com' });
       });
 
-      expect(mockSignUpEmail).toHaveBeenCalledWith(expect.objectContaining({ name: 'john.doe' }));
+      expect(mockSignUpEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'newuser', username: 'newuser' }),
+      );
     });
 
     it('should show error for duplicate email', async () => {

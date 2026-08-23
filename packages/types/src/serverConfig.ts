@@ -70,6 +70,7 @@ export interface GlobalServerConfig {
   enableKlavis?: boolean;
   enableLobehubSkill?: boolean;
   enableMagicLink?: boolean;
+  enableMcpProxy?: boolean;
   enableMarketTrustedClient?: boolean;
   enableUploadFileToServer?: boolean;
   enableVisualUnderstanding?: boolean;

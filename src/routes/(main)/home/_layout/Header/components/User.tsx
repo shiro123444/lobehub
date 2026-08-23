@@ -48,7 +48,7 @@ const User = memo<{ lite?: boolean }>(({ lite }) => {
           paddingInlineStart: 2,
         }}
       >
-        <UserAvatar shape={'square'} size={28} />
+        <UserAvatar background="transparent" shape={'square'} size={42} />
         {!lite && (
           <Flexbox horizontal align={'center'} gap={4} style={{ overflow: 'hidden' }}>
             {!isSignedIn && (nickname || username) ? (

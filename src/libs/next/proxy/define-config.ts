@@ -169,6 +169,8 @@ export function defineConfig() {
   const isPublicRoute = createRouteMatcher([
     // backend api
     '/api/v1(.*)', // OpenAPI routes should use OpenAPI auth (API Key/OIDC), not BetterAuth session
+    '/api/auth-check-user',
+    '/api/auth-resolve-username',
     '/api/auth(.*)',
     '/api/webhooks(.*)',
     '/api/workflows(.*)',
@@ -209,6 +211,8 @@ export function defineConfig() {
     // when enable auth protection, only public route is not protected, others are all protected
     const isProtected = !isPublicRoute(req);
 
+    console.log(`[Middleware] Path: ${req.nextUrl.pathname}, isProtected: ${isProtected}`);
+
     logBetterAuth('Route protection status: %s, %s', req.url, isProtected ? 'protected' : 'public');
 
     // Skip session lookup for public routes to reduce latency
@@ -221,6 +225,8 @@ export function defineConfig() {
 
     const isLoggedIn = !!session?.user;
 
+    console.log(`[Middleware] Path: ${req.nextUrl.pathname}, isLoggedIn: ${isLoggedIn}`);
+
     logBetterAuth('BetterAuth session status: %O', {
       isLoggedIn,
       userId: session?.user?.id,
@@ -229,16 +235,14 @@ export function defineConfig() {
     if (!isLoggedIn) {
       // If request a protected route, redirect to sign-in page
       if (isProtected) {
-        logBetterAuth('Request a protected route, redirecting to sign-in page');
-
         const callbackUrl = `${appEnv.APP_URL}${req.nextUrl.pathname}${req.nextUrl.search}`;
         const signInUrl = new URL('/signin', appEnv.APP_URL);
         signInUrl.searchParams.set('callbackUrl', callbackUrl);
         const hl = req.nextUrl.searchParams.get('hl');
         if (hl) {
           signInUrl.searchParams.set('hl', hl);
-          logBetterAuth('Preserving locale to sign-in: hl=%s', hl);
         }
+        console.log(`[Middleware] Redirecting to: ${signInUrl.toString()}`);
         return Response.redirect(signInUrl);
       }
       logBetterAuth('Request a free route but not login, allow visit without auth header');

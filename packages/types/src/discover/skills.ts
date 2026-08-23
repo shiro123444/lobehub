@@ -67,6 +67,11 @@ export interface DiscoverSkillItem extends Omit<MarketSkillListItem, 'commentCou
   ratingAvg?: number;
 }
 
+export interface DiscoverSkillInstallation {
+  agent?: string;
+  human?: string;
+}
+
 export interface SkillQueryParams {
   category?: string;
   locale?: string;
@@ -89,6 +94,7 @@ export interface DiscoverSkillDetail extends MarketSkillDetail {
     url?: string;
   };
   homepage?: string;
+  installation?: DiscoverSkillInstallation;
   ratingDistribution?: SkillRatingDistribution;
   related?: DiscoverSkillItem[];
 }

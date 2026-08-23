@@ -10,7 +10,6 @@
  * - No dependency on frontend stores (useToolStore, useAgentStore, etc.)
  */
 import { AgentDocumentsManifest } from '@lobechat/builtin-tool-agent-documents';
-import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
@@ -201,7 +200,6 @@ export const createServerAgentToolsEngine = (
     // Always-on builtin tools
     ...Object.fromEntries(alwaysOnToolIds.map((id) => [id, true])),
     // System-level rules (may override user selection for specific tools)
-    [CloudSandboxManifest.identifier]: runtimeMode === 'cloud',
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     // Local-system: gated by `canUseDevice` (resolveDeviceAccessPolicy)
     // first — keeps external bot senders out before runtime checks even

@@ -13,7 +13,6 @@ export const RECOMMENDED_SKILLS: RecommendedSkillItem[] = [
   // Builtin skills
   { id: 'lobe-artifacts', type: RecommendedSkillType.Builtin },
   { id: 'lobe-user-memory', type: RecommendedSkillType.Builtin },
-  { id: 'lobe-cloud-sandbox', type: RecommendedSkillType.Builtin },
   { id: 'lobe-task', type: RecommendedSkillType.Builtin },
   { id: 'lobe-agent-documents', type: RecommendedSkillType.Builtin },
   { id: 'lobe-message', type: RecommendedSkillType.Builtin },

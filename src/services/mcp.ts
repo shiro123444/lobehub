@@ -86,6 +86,7 @@ class MCPService {
 
     const isStdio = plugin?.customParams?.mcp?.type === 'stdio';
     const isCloud = plugin?.customParams?.mcp?.type === 'cloud';
+    const isMcpProxy = (plugin?.customParams?.mcp?.type as any) === 'mcpProxy';
     const isCustomPlugin = !!customPlugin;
 
     // Build meta for server-side reporting
@@ -133,6 +134,20 @@ class MCPService {
           apiParams,
           identifier,
           meta,
+          toolName: apiName,
+        });
+      } else if (isMcpProxy) {
+        // MCP Proxy type: call via server-side proxy (stdio runs on the server)
+        result = await toolsClient.mcpProxy.callTool.mutate({
+          args,
+          meta,
+          params: {
+            args: connection?.args || [],
+            command: connection?.command || '',
+            env: connection?.env,
+            name: identifier,
+            type: 'stdio',
+          },
           toolName: apiName,
         });
       } else if (isDesktop && isStdio) {
@@ -245,6 +260,30 @@ class MCPService {
       serialized as any,
     );
     return superjson.deserialize(serializedResult as any) as any;
+  }
+
+  /**
+   * Get MCP manifest via server-side proxy (for web clients using stdio plugins)
+   */
+  async getMcpProxyManifest(
+    stdioParams: {
+      args?: string[];
+      command: string;
+      env?: Record<string, string>;
+      name: string;
+    },
+    _metadata?: CustomPluginMetadata,
+    _signal?: AbortSignal,
+  ) {
+    void _signal;
+    void _metadata;
+    return toolsClient.mcpProxy.getManifest.query({
+      args: stdioParams.args || [],
+      command: stdioParams.command,
+      env: stdioParams.env,
+      name: stdioParams.name,
+      type: 'stdio',
+    });
   }
 
   /**

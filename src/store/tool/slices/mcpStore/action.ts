@@ -15,6 +15,7 @@ import { discoverService } from '@/services/discover';
 import { mcpService } from '@/services/mcp';
 import { pluginService } from '@/services/plugin';
 import { globalHelpers } from '@/store/global/helpers';
+import { getServerConfigStoreState } from '@/store/serverConfig';
 import { mcpStoreSelectors } from '@/store/tool/selectors';
 import { type StoreSetter } from '@/store/types';
 import { McpConnectionType } from '@/types/discover';
@@ -234,7 +235,7 @@ export class PluginMCPStoreActionImpl {
     let data: any;
     let result: CheckMcpInstallResult | undefined;
     let connection: any;
-    const userAgent = `LobeHub Desktop/${CURRENT_VERSION}`;
+    const userAgent = `Nexus Desktop/${CURRENT_VERSION}`;
 
     try {
       // Check if already cancelled
@@ -290,16 +291,79 @@ export class PluginMCPStoreActionImpl {
             (!option?.connection?.type && !option?.connection?.url),
         );
 
-        // Check if cloudEndPoint is available: stdio type + haveCloudEndpoint exists
-        // Both desktop and web should use cloud endpoint if available
-        const hasCloudEndpoint = stdioOption && haveCloudEndpoint;
+        const serverConfig = getServerConfigStoreState();
+        const mcpProxyEnabled = !isDesktop && serverConfig?.serverConfig?.enableMcpProxy;
+        const enableMarketTrustedClient =
+          serverConfig?.serverConfig?.enableMarketTrustedClient || false;
+        const hasCloudEndpoint = stdioOption && haveCloudEndpoint && enableMarketTrustedClient;
 
-        // Prioritize endpoint (http/cloud) over stdio in all environments
-        // Desktop: endpoint > stdio
-        // Web: endpoint only (stdio not supported)
+        // Nexus self-hosted priority:
+        // 1. Direct HTTP / Streamable HTTP where the MCP provider supports it.
+        // 2. Server-side MCP proxy for stdio on Web when MCP_PROXY_ENABLED=1.
+        // 3. Official cloud gateway only when Trusted Client is explicitly configured.
+        // 4. Desktop/local stdio installation checks.
         const shouldUseHttpDeployment = !!httpOption;
 
-        if (hasCloudEndpoint) {
+        if (shouldUseHttpDeployment && httpOption) {
+          // HTTP type: skip system dependency check, use URL directly
+          log('HTTP MCP detected, skipping system dependency check');
+
+          connection = {
+            auth: httpOption.connection?.auth || { type: 'none' },
+            headers: httpOption.connection?.headers,
+            type: 'http',
+            url: httpOption.connection?.url,
+          };
+
+          log('Using HTTP connection: %O', { type: connection.type, url: connection.url });
+
+          const configSchema = httpOption.connection?.configSchema;
+          const needsConfig = doesConfigSchemaRequireInput(configSchema);
+
+          if (needsConfig && !normalizedConfig) {
+            updateMCPInstallProgress(identifier, {
+              configSchema,
+              connection,
+              manifest: data,
+              needsConfig: true,
+              progress: 50,
+              step: MCPInstallStep.CONFIGURATION_REQUIRED,
+            });
+
+            updateInstallLoadingState(identifier, undefined);
+            return false;
+          }
+        } else if (stdioOption && mcpProxyEnabled) {
+          // MCP Proxy mode: skip dependency check (deps are on the server)
+          // Build connection as stdio type, will be routed through mcpProxy at call time
+          log('MCP Proxy enabled, using server-side stdio execution');
+
+          const stdioConn = stdioOption?.connection;
+          connection = {
+            args: stdioConn?.args || [],
+            command: stdioConn?.command || '',
+            env: stdioConn?.env,
+            name: identifier,
+            type: 'mcpProxy' as any,
+          };
+
+          const configSchema = stdioConn?.configSchema;
+          const needsConfig = doesConfigSchemaRequireInput(configSchema);
+
+          if (needsConfig && !normalizedConfig) {
+            updateMCPInstallProgress(identifier, {
+              configSchema,
+              connection,
+              manifest: data,
+              needsConfig: true,
+              progress: 50,
+              step: MCPInstallStep.CONFIGURATION_REQUIRED,
+            });
+
+            updateInstallLoadingState(identifier, undefined);
+            return false;
+          }
+        } else if (hasCloudEndpoint) {
           // Use cloudEndPoint, create cloud type connection
           log('Using cloudEndPoint for stdio plugin: %s', haveCloudEndpoint);
 
@@ -331,37 +395,8 @@ export class PluginMCPStoreActionImpl {
             updateInstallLoadingState(identifier, undefined);
             return false;
           }
-        } else if (shouldUseHttpDeployment && httpOption) {
-          // HTTP type: skip system dependency check, use URL directly
-          log('HTTP MCP detected, skipping system dependency check');
-
-          connection = {
-            auth: httpOption.connection?.auth || { type: 'none' },
-            headers: httpOption.connection?.headers,
-            type: 'http',
-            url: httpOption.connection?.url,
-          };
-
-          log('Using HTTP connection: %O', { type: connection.type, url: connection.url });
-
-          const configSchema = httpOption.connection?.configSchema;
-          const needsConfig = doesConfigSchemaRequireInput(configSchema);
-
-          if (needsConfig && !normalizedConfig) {
-            updateMCPInstallProgress(identifier, {
-              configSchema,
-              connection,
-              manifest: data,
-              needsConfig: true,
-              progress: 50,
-              step: MCPInstallStep.CONFIGURATION_REQUIRED,
-            });
-
-            updateInstallLoadingState(identifier, undefined);
-            return false;
-          }
         } else {
-          // stdio type: requires complete system dependency check process
+          // stdio type: requires complete system dependency check process (desktop only)
 
           // Step 2: Check installation environment
           updateMCPInstallProgress(identifier, {
@@ -434,7 +469,7 @@ export class PluginMCPStoreActionImpl {
         }
       }
 
-      if (connection?.type === 'stdio') {
+      if (connection?.type === 'stdio' || (connection?.type as any) === 'mcpProxy') {
         const baseEnv = toNonEmptyStringRecord(connection.env);
 
         if (baseEnv || normalizedConfig) {
@@ -503,6 +538,20 @@ export class PluginMCPStoreActionImpl {
         // Cloud type: build manifest directly from market data
         manifest = buildCloudMcpManifest({ data, plugin });
       }
+      if ((connection?.type as any) === 'mcpProxy') {
+        // MCP Proxy type: fetch manifest via server-side proxy
+        log('Fetching manifest via MCP Proxy for: %s', identifier);
+        manifest = await mcpService.getMcpProxyManifest(
+          {
+            args: connection.args || [],
+            command: connection.command!,
+            env: mergedStdioEnv,
+            name: identifier,
+          },
+          { avatar: plugin.icon, description: plugin.description, name: data.name },
+          abortController.signal,
+        );
+      }
 
       // set version
       if (manifest) {
@@ -550,7 +599,7 @@ export class PluginMCPStoreActionImpl {
       if (finalConnection.type === 'http' && mergedHttpHeaders) {
         finalConnection.headers = mergedHttpHeaders;
       }
-      if (finalConnection.type === 'stdio' && mergedStdioEnv) {
+      if ((finalConnection.type === 'stdio' || (finalConnection.type as any) === 'mcpProxy') && mergedStdioEnv) {
         finalConnection.env = mergedStdioEnv;
       }
       if (finalConnection.type === 'cloud' && mergedCloudHeaders) {
@@ -767,21 +816,37 @@ export class PluginMCPStoreActionImpl {
           },
           abortController.signal,
         );
-      } else if (connection.type === 'stdio') {
+      } else if (connection.type === 'stdio' || (connection.type as any) === 'mcpProxy') {
         if (!connection.command) {
           throw new Error('Command is required for STDIO connection');
         }
 
-        manifest = await mcpService.getStdioMcpServerManifest(
-          {
-            args: connection.args,
-            command: connection.command,
-            env: connection.env,
-            name: identifier,
-          },
-          metadata,
-          abortController.signal,
-        );
+        const serverConfig = getServerConfigStoreState();
+        const mcpProxyEnabled = !isDesktop && serverConfig?.serverConfig?.enableMcpProxy;
+
+        if (mcpProxyEnabled) {
+          manifest = await mcpService.getMcpProxyManifest(
+            {
+              args: connection.args,
+              command: connection.command,
+              env: connection.env,
+              name: identifier,
+            },
+            metadata,
+            abortController.signal,
+          );
+        } else {
+          manifest = await mcpService.getStdioMcpServerManifest(
+            {
+              args: connection.args,
+              command: connection.command,
+              env: connection.env,
+              name: identifier,
+            },
+            metadata,
+            abortController.signal,
+          );
+        }
       } else {
         throw new Error('Invalid MCP connection type');
       }

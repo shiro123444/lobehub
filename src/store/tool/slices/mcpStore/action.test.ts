@@ -13,6 +13,18 @@ import { MCPInstallStep } from '@/types/plugins';
 
 import { useToolStore } from '../../store';
 
+const mockConstEnv = vi.hoisted(() => ({ isDesktop: false }));
+
+vi.mock('@lobechat/const', async (importOriginal) => {
+  const actual = await importOriginal<typeof LobechatConstModule>();
+  return {
+    ...actual,
+    get isDesktop() {
+      return mockConstEnv.isDesktop;
+    },
+  };
+});
+
 vi.mock('@/libs/trpc/client', () => ({
   asyncClient: {},
   lambdaClient: {
@@ -52,37 +64,8 @@ vi.mock('@/utils/sleep', () => ({
   sleep: vi.fn().mockResolvedValue(undefined),
 }));
 
-const bootstrapToolStoreWithDesktop = async (isDesktopEnv: boolean) => {
-  vi.resetModules();
-  vi.mock('zustand/traditional');
-
-  vi.doMock('@lobechat/const', async () => {
-    const actual = await vi.importActual<typeof LobechatConstModule>('@lobechat/const');
-    return {
-      ...actual,
-      isDesktop: isDesktopEnv,
-    };
-  });
-
-  const storeModule = await import('@/store/tool');
-  const discoverModule = await import('@/services/discover');
-  const helpersModule = await import('@/store/global/helpers');
-
-  const cleanup = () => {
-    vi.resetModules();
-    vi.doUnmock('@lobechat/const');
-    vi.mock('zustand/traditional');
-  };
-
-  return {
-    useToolStore: storeModule.useToolStore,
-    discoverService: discoverModule.discoverService,
-    globalHelpers: helpersModule.globalHelpers,
-    cleanup,
-  };
-};
-
 beforeEach(() => {
+  mockConstEnv.isDesktop = false;
   vi.clearAllMocks();
 
   vi.spyOn(discoverService, 'injectMPToken').mockResolvedValue(undefined);
@@ -645,13 +628,6 @@ describe('mcpStore actions', () => {
     });
 
     it('should not append connectionType in desktop environment', async () => {
-      const {
-        useToolStore: desktopStore,
-        discoverService: desktopDiscoverService,
-        globalHelpers: desktopGlobalHelpers,
-        cleanup,
-      } = await bootstrapToolStoreWithDesktop(true);
-
       const mockData = {
         items: [{ identifier: 'desktop-plugin', name: 'Desktop Plugin' }] as PluginItem[],
         categories: [],
@@ -662,13 +638,14 @@ describe('mcpStore actions', () => {
       };
 
       try {
-        vi.spyOn(desktopGlobalHelpers, 'getCurrentLanguage').mockReturnValue('en-US');
+        mockConstEnv.isDesktop = true;
+        vi.spyOn(globalHelpers, 'getCurrentLanguage').mockReturnValue('en-US');
         const fetchSpy = vi
-          .spyOn(desktopDiscoverService, 'getMCPPluginList')
+          .spyOn(discoverService, 'getMCPPluginList')
           .mockResolvedValue(mockData);
 
         const { result } = renderHook(() =>
-          desktopStore.getState().useFetchMCPPluginList({ page: 1, pageSize: 20 }),
+          useToolStore.getState().useFetchMCPPluginList({ page: 1, pageSize: 20 }),
         );
 
         await waitFor(() => {
@@ -680,7 +657,7 @@ describe('mcpStore actions', () => {
         expect(firstCallArgs).toMatchObject({ page: 1, pageSize: 20 });
         expect(firstCallArgs.connectionType).toBeUndefined();
       } finally {
-        cleanup();
+        mockConstEnv.isDesktop = false;
       }
     });
   });
@@ -930,7 +907,7 @@ describe('mcpStore actions', () => {
     });
 
     describe('cloudEndPoint support', () => {
-      it('should create cloud type connection when cloudEndPoint is available on web', async () => {
+      it('should ignore cloudEndPoint without trusted client and use stdio install path', async () => {
         const { result } = renderHook(() => useToolStore());
 
         const mockManifestWithCloudEndpoint = {
@@ -1000,22 +977,19 @@ describe('mcpStore actions', () => {
 
         expect(installResult).toBe(true);
 
-        // Should create cloud type connection
+        // Nexus self-hosted should not use the official cloud gateway unless Trusted Client is configured.
         expect(installPluginSpy).toHaveBeenCalledWith(
           expect.objectContaining({
             customParams: expect.objectContaining({
               mcp: expect.objectContaining({
-                type: 'cloud',
-                cloudEndPoint: true,
+                type: 'stdio',
               }),
             }),
           }),
         );
 
-        // Should NOT call stdio connection
-        expect(mcpService.getStdioMcpServerManifest).not.toHaveBeenCalled();
-        // Should NOT call checkInstallation (skipped for cloud)
-        expect(mcpService.checkInstallation).not.toHaveBeenCalled();
+        expect(mcpService.checkInstallation).toHaveBeenCalled();
+        expect(mcpService.getStdioMcpServerManifest).toHaveBeenCalled();
 
         // Restore original isDesktop
         vi.spyOn(await import('@lobechat/const'), 'isDesktop', 'get').mockReturnValue(
@@ -1216,7 +1190,7 @@ describe('mcpStore actions', () => {
       it('should handle cancellation during installation', async () => {
         const { result } = renderHook(() => useToolStore());
 
-        vi.spyOn(mcpService, 'checkInstallation').mockImplementation(async (manifest, signal) => {
+        vi.spyOn(mcpService, 'checkInstallation').mockImplementation(async (_manifest, _signal) => {
           // Cancel after check
           setTimeout(() => {
             result.current.cancelInstallMCPPlugin('test-plugin');

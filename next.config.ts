@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os';
 import { defineConfig } from './src/libs/next/config/define-config';
 
 const isVercel = !!process.env.VERCEL_ENV;
@@ -19,8 +20,31 @@ const vercelConfig = {
     ],
   },
 };
+
+const getLocalIPs = () => {
+  const ips = ['localhost', '127.0.0.1'];
+  try {
+    const nets = networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net.family === 'IPv4' && !net.internal) {
+          ips.push(net.address);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[next.config] Failed to get local IPs:', error);
+  }
+  return ips;
+};
+
 const nextConfig = defineConfig({
   ...(isVercel ? vercelConfig : {}),
 });
+
+if (process.env.NODE_ENV === 'development') {
+  const allowedOrigins = getLocalIPs();
+  (nextConfig as any).allowedDevOrigins = allowedOrigins;
+}
 
 export default nextConfig;

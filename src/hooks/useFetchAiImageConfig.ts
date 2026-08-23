@@ -7,6 +7,8 @@ import { useImageStore } from '@/store/image';
 import {
   DEFAULT_AI_IMAGE_MODEL,
   DEFAULT_AI_IMAGE_PROVIDER,
+  NEXUS_IMAGE_MODEL,
+  NEXUS_IMAGE_PROVIDER,
 } from '@/store/image/slices/generationConfig/initialState';
 import { useUserStore } from '@/store/user';
 import { authSelectors } from '@/store/user/selectors';
@@ -47,6 +49,10 @@ export const useFetchAiImageConfig = () => {
 
   // Determine which model/provider to use for initialization
   const initParams = useMemo(() => {
+    if (checkModelEnabled(enabledImageModelList, NEXUS_IMAGE_PROVIDER, NEXUS_IMAGE_MODEL)) {
+      return { model: NEXUS_IMAGE_MODEL, provider: NEXUS_IMAGE_PROVIDER };
+    }
+
     // 1. Try lastSelected if enabled
     if (
       lastSelectedImageModel &&

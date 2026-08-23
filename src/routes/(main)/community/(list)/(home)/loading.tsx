@@ -3,15 +3,14 @@ import { useTranslation } from 'react-i18next';
 
 import ListLoading from '@/routes/(main)/community/components/ListLoading';
 import Title from '@/routes/(main)/community/components/Title';
-
-import CreatorRewardBanner from './features/CreatorRewardBanner';
+import HeroBanner from '@/features/NexusRegistry/HeroBanner';
 
 const Loading = memo(() => {
   const { t } = useTranslation('discover');
 
   return (
     <>
-      <CreatorRewardBanner />
+      <HeroBanner />
       <Title more={t('home.more')} moreLink={'/community/agent'}>
         {t('home.featuredAssistants')}
       </Title>

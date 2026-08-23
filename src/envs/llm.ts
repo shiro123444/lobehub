@@ -226,6 +226,10 @@ export const getLLMConfig = () => {
       NEWAPI_API_KEY: z.string().optional(),
       NEWAPI_PROXY_URL: z.string().optional(),
 
+      ENABLED_NEXUS: z.boolean(),
+      NEXUS_API_KEY: z.string().optional(),
+      NEXUS_PROXY_URL: z.string().optional(),
+
       ENABLED_CEREBRAS: z.boolean(),
       CEREBRAS_API_KEY: z.string().optional(),
 
@@ -472,6 +476,10 @@ export const getLLMConfig = () => {
       ENABLED_NEWAPI: !!process.env.NEWAPI_API_KEY,
       NEWAPI_API_KEY: process.env.NEWAPI_API_KEY,
       NEWAPI_PROXY_URL: process.env.NEWAPI_PROXY_URL,
+
+      ENABLED_NEXUS: !!process.env.NEXUS_API_KEY,
+      NEXUS_API_KEY: process.env.NEXUS_API_KEY,
+      NEXUS_PROXY_URL: process.env.NEXUS_PROXY_URL,
 
       ENABLED_NEBIUS: !!process.env.NEBIUS_API_KEY,
       NEBIUS_API_KEY: process.env.NEBIUS_API_KEY,

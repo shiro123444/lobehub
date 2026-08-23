@@ -65,6 +65,13 @@ export const mobileRoutes: RouteObject[] = [
                 index: true,
               },
               {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/analytics'),
+                  'Mobile > Discover > List > Analytics',
+                ),
+                path: 'analytics',
+              },
+              {
                 children: [
                   {
                     element: dynamicElement(

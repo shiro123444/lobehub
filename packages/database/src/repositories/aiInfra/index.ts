@@ -22,6 +22,16 @@ import type { LobeChatDatabase } from '../../type';
 type DecryptUserKeyVaults = (encryptKeyVaultsStr: string | null) => Promise<any>;
 
 const normalizeProvider = (provider: string) => provider.toLowerCase();
+const NEXUS_PROVIDER_ID = 'nexus';
+
+const getNexusModelAdminUserId = () =>
+  [
+    process.env.NEXUS_MODEL_ADMIN_USER_ID,
+    ...(process.env.NEXUS_MODEL_ADMIN_USER_IDS ?? '').split(','),
+    ...(process.env.NEXUS_ADMIN_USER_IDS ?? '').split(','),
+  ]
+    .map((id) => id?.trim())
+    .find(Boolean);
 
 /**
  * Provider-level search defaults (only used when built-in models don't provide settings.searchImpl and settings.searchProvider)
@@ -126,19 +136,45 @@ export class AiInfraRepos {
   private db: LobeChatDatabase;
   aiProviderModel: AiProviderModel;
   private readonly providerConfigs: Record<string, ProviderConfig>;
+  private readonly platformModelOwnerId?: string;
   aiModelModel: AiModelModel;
 
   constructor(
     db: LobeChatDatabase,
     userId: string,
     providerConfigs: Record<string, ProviderConfig>,
+    options?: { platformModelOwnerId?: string },
   ) {
     this.userId = userId;
     this.db = db;
     this.aiProviderModel = new AiProviderModel(db, userId);
     this.aiModelModel = new AiModelModel(db, userId);
     this.providerConfigs = providerConfigs;
+    this.platformModelOwnerId = options?.platformModelOwnerId ?? getNexusModelAdminUserId();
   }
+
+  private getPlatformAiModelModel = () => {
+    if (!this.platformModelOwnerId || this.platformModelOwnerId === this.userId) return;
+
+    return new AiModelModel(this.db, this.platformModelOwnerId);
+  };
+
+  private fetchPlatformModelListByProviderId = async (providerId: string) => {
+    if (providerId !== NEXUS_PROVIDER_ID) return [];
+
+    return (await this.getPlatformAiModelModel()?.getModelListByProviderId(providerId)) || [];
+  };
+
+  private fetchPlatformAllModels = async () => {
+    return (await this.getPlatformAiModelModel()?.getAllModels()) || [];
+  };
+
+  private fetchBaseModels = async (providerId: string) => {
+    const builtinModels: AiProviderModelListItem[] = (await this.fetchBuiltinModels(providerId)) || [];
+    const platformModels = await this.fetchPlatformModelListByProviderId(providerId);
+
+    return mergeArrayById(builtinModels, platformModels) as AiProviderModelListItem[];
+  };
 
   /**
    * Calculate the final providerList based on the known providerConfig
@@ -148,6 +184,7 @@ export class AiInfraRepos {
 
     // 1. First create a mapping based on DEFAULT_MODEL_PROVIDER_LIST id order
     const orderMap = new Map(DEFAULT_MODEL_PROVIDER_LIST.map((item, index) => [item.id, index]));
+    const visibleProviderIds = new Set(orderMap.keys());
 
     const builtinProviders = DEFAULT_MODEL_PROVIDER_LIST.map((item) => ({
       description: item.description,
@@ -162,11 +199,13 @@ export class AiInfraRepos {
     const mergedProviders = mergeArrayById(builtinProviders, userProviders);
 
     // 3. Sort based on orderMap
-    return mergedProviders.sort((a, b) => {
-      const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
-      const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    });
+    return mergedProviders
+      .filter((provider) => visibleProviderIds.has(provider.id))
+      .sort((a, b) => {
+        const orderA = orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      });
   };
 
   /**
@@ -195,42 +234,54 @@ export class AiInfraRepos {
       this.getAiProviderList(),
       this.aiModelModel.getAllModels(),
     ]);
+    const platformModels = await this.fetchPlatformAllModels();
     const enabledProviders = providers.filter((item) => (filterEnabled ? item.enabled : true));
 
     const builtinModelList = await pMap(
       enabledProviders,
       async (provider) => {
-        const aiModels = await this.fetchBuiltinModels(provider.id);
+        const aiModels = await this.fetchBaseModels(provider.id);
         return (aiModels || [])
           .map<EnabledAiModel & { enabled?: boolean | null }>((item) => {
+            const platform = platformModels.find(
+              (m) => m.id === item.id && m.providerId === provider.id,
+            );
             const user = allModels.find((m) => m.id === item.id && m.providerId === provider.id);
 
             // User hasn't modified local model
-            if (!user)
+            if (!user && !platform)
               return injectSearchSettings(provider.id, {
                 ...item,
                 abilities: item.abilities || {},
                 providerId: provider.id,
               });
 
+            const modelOverrides = [platform, user].filter(Boolean) as EnabledAiModel[];
             const mergedModel = {
               ...item,
-              abilities: !isEmpty(user.abilities) ? user.abilities : item.abilities || {},
-              config: !isEmpty(user.config) ? user.config : item.config,
-              contextWindowTokens:
-                typeof user.contextWindowTokens === 'number'
-                  ? user.contextWindowTokens
-                  : item.contextWindowTokens,
-              displayName: user?.displayName || item.displayName,
-              enabled: typeof user.enabled === 'boolean' ? user.enabled : item.enabled,
+              abilities: item.abilities || {},
               id: item.id,
               providerId: provider.id,
-              settings: isEmpty(user.settings)
-                ? item.settings
-                : merge(item.settings || {}, user.settings || {}),
-              sort: user.sort ?? undefined,
-              type: user.type || item.type,
+              sort: (item as any).sort,
             };
+            for (const model of modelOverrides) {
+              Object.assign(mergedModel, {
+                abilities: !isEmpty(model.abilities) ? model.abilities : mergedModel.abilities,
+                config: !isEmpty(model.config) ? model.config : mergedModel.config,
+                contextWindowTokens:
+                  typeof model.contextWindowTokens === 'number'
+                    ? model.contextWindowTokens
+                    : mergedModel.contextWindowTokens,
+                displayName: model.displayName || mergedModel.displayName,
+                enabled: typeof model.enabled === 'boolean' ? model.enabled : mergedModel.enabled,
+                settings: isEmpty(model.settings)
+                  ? mergedModel.settings
+                  : merge(mergedModel.settings || {}, model.settings || {}),
+                sort: model.sort ?? mergedModel.sort,
+                type: model.type || mergedModel.type,
+              });
+            }
+
             return injectSearchSettings(provider.id, mergedModel); // User modified local model, check search settings
           })
           .filter((item) => (filterEnabled ? item.enabled : true));
@@ -403,8 +454,7 @@ export class AiInfraRepos {
   ) => {
     const aiModels = await this.aiModelModel.getModelListByProviderId(providerId);
 
-    const defaultModels: AiProviderModelListItem[] =
-      (await this.fetchBuiltinModels(providerId)) || [];
+    const defaultModels = await this.fetchBaseModels(providerId);
     // Not modifying search settings here doesn't affect usage, but done for data consistency on get
     let mergedModel = mergeArrayById(defaultModels, aiModels) as AiProviderModelListItem[];
 

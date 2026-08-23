@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AuthCard } from '../../../../../features/AuthCard';
 import { trackLoginOrSignupClicked } from '../../../../../features/User/UserLoginOrSignup/trackLoginOrSignupClicked';
+import { USERNAME_REGEX } from '../../signin/SignInEmailStep';
 import { type SignUpFormValues } from './useSignUp';
 import { useSignUp } from './useSignUp';
 
@@ -57,6 +58,34 @@ const BetterAuthSignUpForm = () => {
       title={t('betterAuth.signup.title')}
     >
       <Form form={form} layout="vertical" onFinish={onSubmit}>
+        <Form.Item
+          name="username"
+          rules={[
+            { message: t('betterAuth.errors.usernameRequired'), required: true },
+            { max: 32, message: t('betterAuth.errors.usernameMaxLength') },
+            { message: t('betterAuth.errors.usernameMinLength'), min: 2 },
+            {
+              message: t('betterAuth.errors.usernameInvalid'),
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                return USERNAME_REGEX.test(String(value).trim()) ? Promise.resolve() : Promise.reject();
+              },
+            },
+          ]}
+        >
+          <Input
+            placeholder={t('betterAuth.signup.usernamePlaceholder')}
+            size="large"
+            prefix={
+              <Icon
+                icon={Mail}
+                style={{
+                  marginInline: 6,
+                }}
+              />
+            }
+          />
+        </Form.Item>
         <Form.Item
           name="email"
           rules={[

@@ -47,6 +47,7 @@ vi.mock('better-auth/plugins', () => ({
   emailOTP: vi.fn(() => ({ id: 'email-otp' })),
   genericOAuth: vi.fn(() => ({ id: 'generic-oauth' })),
   magicLink: vi.fn(() => ({ id: 'magic-link' })),
+  username: vi.fn(() => ({ id: 'username' })),
 }));
 
 vi.mock('better-auth-harmony', () => ({

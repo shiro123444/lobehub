@@ -1,15 +1,11 @@
-import { ActionIcon, Button, Modal , Skeleton } from '@lobehub/ui';
+import { ActionIcon, Button } from '@lobehub/ui';
 import { useResponsive } from 'antd-style';
-import { Brush } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { MOBILE_HEADER_ICON_SIZE } from '@/const/layoutTokens';
-import dynamic from '@/libs/next/dynamic';
-
-const Inner = dynamic(() => import('./Inner'), {
-  loading: () => <Skeleton paragraph={{ rows: 8 }} title={false} />,
-});
+import SubmitRepoModal from '@/features/NexusRegistry/SubmitRepoModal';
 
 const CreateButton = memo<{ mobile?: boolean }>(({ mobile }) => {
   const { mobile: resMobile } = useResponsive();
@@ -19,29 +15,21 @@ const CreateButton = memo<{ mobile?: boolean }>(({ mobile }) => {
   const buttonContent =
     mobile || resMobile ? (
       <ActionIcon
-        icon={Brush}
+        icon={Plus}
         size={MOBILE_HEADER_ICON_SIZE}
-        title={t('create')}
+        title={t('user.submitRepo')}
         onClick={() => setIsModalOpen(true)}
       />
     ) : (
-      <Button icon={Brush} onClick={() => setIsModalOpen(true)}>
-        {t('create')}
+      <Button icon={Plus} style={{ flex: 'none' }} onClick={() => setIsModalOpen(true)}>
+        {t('user.submitRepo')}
       </Button>
     );
 
   return (
     <>
       {buttonContent}
-      <Modal
-        allowFullscreen
-        footer={null}
-        open={isModalOpen}
-        title={t('create')}
-        onCancel={() => setIsModalOpen(false)}
-      >
-        <Inner />
-      </Modal>
+      <SubmitRepoModal open={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </>
   );
 });

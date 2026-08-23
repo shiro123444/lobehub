@@ -1,9 +1,56 @@
+import { ModelProvider, nexus } from 'model-bank';
 import { isProviderDisableBrowserRequest } from 'model-bank/modelProviders';
 
 import { type AIProviderStoreState } from '@/store/aiInfra/initialState';
-import { type AiProviderRuntimeConfig } from '@/types/aiProvider';
+import { type AiProviderRuntimeConfig, type EnabledProviderWithModels } from '@/types/aiProvider';
 import { AiProviderSourceEnum } from '@/types/aiProvider';
 import { type GlobalLLMProviderKey } from '@/types/user/settings';
+
+const NEXUS_IMAGE_PROVIDER = ModelProvider.Nexus;
+const NEXUS_IMAGE_MODEL = 'gpt-image-2';
+const nexusImageModel = nexus.find((model) => model.id === NEXUS_IMAGE_MODEL);
+
+const ensureNexusImageModelList = (
+  enabledImageModels: EnabledProviderWithModels[] = [],
+): EnabledProviderWithModels[] => {
+  const runtimeNexusProvider = enabledImageModels.find(
+    (provider) => provider.id === NEXUS_IMAGE_PROVIDER,
+  );
+
+  if (runtimeNexusProvider?.children.some((model) => model.id === NEXUS_IMAGE_MODEL)) {
+    return enabledImageModels;
+  }
+
+  if (!nexusImageModel) return enabledImageModels;
+
+  const fallbackProvider: EnabledProviderWithModels = {
+    children: [
+      {
+        abilities: {},
+        approximatePricePerImage: nexusImageModel.pricing?.approximatePricePerImage,
+        description: nexusImageModel.description,
+        displayName: nexusImageModel.displayName ?? NEXUS_IMAGE_MODEL,
+        id: NEXUS_IMAGE_MODEL,
+        parameters: (nexusImageModel as any).parameters,
+        pricing: nexusImageModel.pricing,
+        releasedAt: nexusImageModel.releasedAt,
+      },
+    ],
+    id: NEXUS_IMAGE_PROVIDER,
+    name: 'NEXUS',
+    source: AiProviderSourceEnum.Builtin,
+  };
+
+  if (!runtimeNexusProvider) {
+    return [fallbackProvider, ...enabledImageModels];
+  }
+
+  return enabledImageModels.map((provider) =>
+    provider.id === NEXUS_IMAGE_PROVIDER
+      ? { ...provider, children: [...provider.children, ...fallbackProvider.children] }
+      : provider,
+  );
+};
 
 // List
 const enabledAiProviderList = (s: AIProviderStoreState) =>
@@ -15,7 +62,8 @@ const disabledAiProviderList = (s: AIProviderStoreState) =>
 const disabledCustomAiProviderList = (s: AIProviderStoreState) =>
   s.aiProviderList.filter((item) => !item.enabled && item.source === AiProviderSourceEnum.Custom);
 
-const enabledImageModelList = (s: AIProviderStoreState) => s.enabledImageModelList || [];
+const enabledImageModelList = (s: AIProviderStoreState) =>
+  ensureNexusImageModelList(s.enabledImageModelList);
 
 const enabledVideoModelList = (s: AIProviderStoreState) => s.enabledVideoModelList || [];
 

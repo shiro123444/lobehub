@@ -5,6 +5,9 @@ import React, { memo } from 'react';
 import { ProductLogo } from '@/components/Branding';
 import { type StageItem } from '@/components/InitProgress';
 import InitProgress from '@/components/InitProgress';
+import { isCustomBranding } from '@/const/version';
+
+import NexusBrandLoading from '../NexusBrandLoading';
 
 interface FullscreenLoadingProps {
   activeStage: number;
@@ -16,8 +19,12 @@ const FullscreenLoading = memo<FullscreenLoadingProps>(({ activeStage, stages, c
   return (
     <Flexbox height={'100%'} style={{ position: 'relative', userSelect: 'none' }} width={'100%'}>
       <Center flex={1} gap={16} width={'100%'}>
-        <ProductLogo size={48} type={'combine'} />
-        {contentRender ? contentRender : <InitProgress activeStage={activeStage} stages={stages} />}
+        {isCustomBranding ? (
+          <NexusBrandLoading variant="hero" />
+        ) : (
+          <ProductLogo size={48} type={'combine'} />
+        )}
+        {contentRender || <InitProgress activeStage={activeStage} stages={stages} />}
       </Center>
     </Flexbox>
   );

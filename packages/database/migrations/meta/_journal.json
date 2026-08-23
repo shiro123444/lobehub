@@ -721,6 +721,41 @@
       "when": 1778602304603,
       "tag": "0102_add_agent_operations_table",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1779119331177,
+      "tag": "0103_add_nexus_auth_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1779120759491,
+      "tag": "0104_add_nexus_im_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1779121000000,
+      "tag": "0105_add_user_display_username",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1779246929789,
+      "tag": "0106_add_nexus_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1779336000000,
+      "tag": "0107_add_nexus_review_audit",
+      "breakpoints": true
     }
   ],
   "version": "6"

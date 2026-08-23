@@ -210,6 +210,27 @@ export const desktopRoutes: RouteObject[] = [
               },
               {
                 element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/analytics'),
+                  'Desktop > Discover > List > Analytics',
+                ),
+                path: 'analytics',
+              },
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/submissions'),
+                  'Desktop > Discover > List > Submissions',
+                ),
+                path: 'submissions',
+              },
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/review'),
+                  'Desktop > Discover > List > Review',
+                ),
+                path: 'review',
+              },
+              {
+                element: dynamicElement(
                   () => import('@/routes/(main)/community/(list)/(home)'),
                   'Desktop > Discover > List > Home',
                 ),
@@ -477,6 +498,13 @@ export const desktopRoutes: RouteObject[] = [
               'Desktop > Image',
             ),
             index: true,
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/(create)/image/gallery'),
+              'Desktop > Image > Gallery',
+            ),
+            path: 'gallery',
           },
         ],
         element: dynamicLayout(

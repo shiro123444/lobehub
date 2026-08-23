@@ -1,5 +1,21 @@
 import { withElectronProtocolIfElectron } from '@/const/protocol';
 
+export const DEFAULT_MARKET_BASE_URL = 'https://market.lobehub.com';
+
+export const getMarketBaseUrl = (baseUrl?: string | null) => {
+  const resolved =
+    baseUrl ||
+    process.env.NEXT_PUBLIC_MARKET_BASE_URL ||
+    process.env.MARKET_BASE_URL ||
+    DEFAULT_MARKET_BASE_URL;
+
+  return resolved.replace(/\/+$/, '');
+};
+
+export const getMarketOrigin = (baseUrl?: string | null) => {
+  return new URL(getMarketBaseUrl(baseUrl)).origin;
+};
+
 export const API_ENDPOINTS = {
   oauth: withElectronProtocolIfElectron('/api/auth'),
 

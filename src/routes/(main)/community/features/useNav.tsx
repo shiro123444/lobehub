@@ -1,6 +1,14 @@
 import { MCP } from '@lobehub/icons';
 import { Icon } from '@lobehub/ui';
-import { Bot, Brain, BrainCircuit, House } from 'lucide-react';
+import {
+  BarChart3,
+  Bot,
+  Brain,
+  BrainCircuit,
+  ClipboardList,
+  House,
+  ShieldCheck,
+} from 'lucide-react';
 import { type ReactNode } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -32,6 +40,21 @@ export const useNav = () => {
         icon: <Icon icon={House} size={ICON_SIZE} />,
         key: DiscoverTab.Home,
         label: <div style={{ color: 'inherit', display: 'inline' }}>{t('tab.home')}</div>,
+      },
+      {
+        icon: <Icon icon={BarChart3} size={ICON_SIZE} />,
+        key: DiscoverTab.Analytics,
+        label: <div style={{ color: 'inherit', display: 'inline' }}>{t('tab.analytics')}</div>,
+      },
+      {
+        icon: <Icon icon={ClipboardList} size={ICON_SIZE} />,
+        key: DiscoverTab.Submissions,
+        label: <div style={{ color: 'inherit', display: 'inline' }}>{t('tab.submissions')}</div>,
+      },
+      {
+        icon: <Icon icon={ShieldCheck} size={ICON_SIZE} />,
+        key: DiscoverTab.Review,
+        label: <div style={{ color: 'inherit', display: 'inline' }}>{t('tab.review')}</div>,
       },
       {
         icon: <Icon icon={Bot} size={ICON_SIZE} />,

@@ -1020,6 +1020,71 @@ table nextauth_verificationtokens {
   }
 }
 
+table nexus_im_identities {
+  id text [pk, not null]
+  avatar text
+  display_name text
+  external_id text [not null]
+  group_id text
+  metadata jsonb [not null, default: `{}`]
+  provider text [not null, default: 'qq']
+  user_id text
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (provider, external_id) [name: 'nexus_im_identities_provider_external_id_idx', unique]
+    user_id [name: 'nexus_im_identities_user_id_idx']
+    (provider, group_id) [name: 'nexus_im_identities_provider_group_id_idx']
+  }
+}
+
+table nexus_im_login_codes {
+  id text [pk, not null]
+  code_hash text [not null]
+  confirmed_at "timestamp with time zone"
+  consumed_at "timestamp with time zone"
+  expires_at "timestamp with time zone" [not null]
+  group_id text
+  identity_id text
+  metadata jsonb [not null, default: `{}`]
+  provider text [not null, default: 'qq']
+  status text [not null, default: 'pending']
+  user_id text
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    code_hash [name: 'nexus_im_login_codes_code_hash_idx']
+    (status, expires_at) [name: 'nexus_im_login_codes_status_expires_at_idx']
+    user_id [name: 'nexus_im_login_codes_user_id_idx']
+    identity_id [name: 'nexus_im_login_codes_identity_id_idx']
+  }
+}
+
+table nexus_legacy_user_mappings {
+  id text [pk, not null]
+  import_batch_id text
+  legacy_created_at "timestamp with time zone"
+  legacy_student_id text [not null]
+  legacy_user_id integer [not null]
+  metadata jsonb [not null, default: `{}`]
+  source text [not null, default: 'kiro-kroxy']
+  user_id text [not null]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (source, legacy_user_id) [name: 'nexus_legacy_user_mappings_source_legacy_user_id_idx', unique]
+    (source, legacy_student_id) [name: 'nexus_legacy_user_mappings_source_legacy_student_id_idx', unique]
+    user_id [name: 'nexus_legacy_user_mappings_user_id_idx']
+    import_batch_id [name: 'nexus_legacy_user_mappings_import_batch_id_idx']
+  }
+}
+
 table notification_deliveries {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   notification_id uuid [not null]

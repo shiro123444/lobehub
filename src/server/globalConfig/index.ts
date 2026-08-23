@@ -50,9 +50,6 @@ export const getServerGlobalConfig = async () => {
         enabledKey: 'ENABLED_AWS_BEDROCK',
         modelListKey: 'AWS_BEDROCK_MODEL_LIST',
       },
-      deepseek: {
-        enabled: true,
-      },
       giteeai: {
         enabledKey: 'ENABLED_GITEE_AI',
         modelListKey: 'GITEE_AI_MODEL_LIST',
@@ -62,6 +59,10 @@ export const getServerGlobalConfig = async () => {
       },
       lmstudio: {
         fetchOnClient: isDesktop ? false : undefined,
+      },
+      nexus: {
+        enabled: true,
+        modelListKey: 'NEXUS_MODEL_LIST',
       },
       ollama: {
         enabled: isDesktop ? true : undefined,
@@ -99,6 +100,7 @@ export const getServerGlobalConfig = async () => {
     enableMarketTrustedClient: !!(
       appEnv.MARKET_TRUSTED_CLIENT_SECRET && appEnv.MARKET_TRUSTED_CLIENT_ID
     ),
+    enableMcpProxy: !!appEnv.MCP_PROXY_ENABLED,
     enableUploadFileToServer: !!fileEnv.S3_SECRET_ACCESS_KEY,
     enableVisualUnderstanding: !!(
       toolsEnv.VISUAL_UNDERSTANDING_PROVIDER && toolsEnv.VISUAL_UNDERSTANDING_MODEL

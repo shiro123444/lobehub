@@ -51,6 +51,12 @@ export const generationRouter = router({
       return deletedGeneration;
     }),
 
+  getImageGallery: generationProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(200).default(80) }).optional())
+    .query(async ({ ctx, input }) => {
+      return ctx.generationModel.queryImageGallery(input?.limit);
+    }),
+
   getGenerationStatus: generationProcedure
     .input(z.object({ asyncTaskId: z.string(), generationId: z.string() }))
     .query(async ({ ctx, input }) => {

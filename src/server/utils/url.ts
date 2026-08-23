@@ -4,6 +4,8 @@ const isVercelPreview = process.env.VERCEL === '1' && process.env.VERCEL_ENV !==
 
 const vercelPreviewUrl = `https://${process.env.VERCEL_URL}`;
 
-const siteUrl = isVercelPreview ? vercelPreviewUrl : 'https://lobechat.com';
+const siteUrl = isVercelPreview
+  ? vercelPreviewUrl
+  : process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://lobechat.com';
 
 export const getCanonicalUrl = (...paths: string[]) => urlJoin(siteUrl, ...paths);

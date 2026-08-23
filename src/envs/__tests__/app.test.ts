@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('getServerConfig', () => {
   beforeEach(() => {
@@ -79,6 +79,36 @@ describe('getServerConfig', () => {
       const { getAppConfig } = await import('../app');
       const config = getAppConfig();
       expect(config.INTERNAL_APP_URL).toBe('http://127.0.0.1:3210');
+    });
+  });
+
+  describe('Market Trusted Client env', () => {
+    afterEach(() => {
+      delete process.env.MARKET_TRUSTED_CLIENT_SECRET;
+      delete process.env.MARKET_TRUSTED_CLIENT_ID;
+    });
+
+    it('should accept a 64-character hex trusted client secret', async () => {
+      process.env.MARKET_TRUSTED_CLIENT_SECRET = 'a'.repeat(64);
+      process.env.MARKET_TRUSTED_CLIENT_ID = 'lobechat-com';
+
+      const { getAppConfig } = await import('../app');
+      const config = getAppConfig();
+
+      expect(config.MARKET_TRUSTED_CLIENT_SECRET).toBe('a'.repeat(64));
+      expect(config.MARKET_TRUSTED_CLIENT_ID).toBe('lobechat-com');
+    });
+
+    it('should reject non-hex trusted client secrets', async () => {
+      process.env.MARKET_TRUSTED_CLIENT_SECRET = 'g'.repeat(64);
+
+      await expect(import('../app')).rejects.toThrow('Invalid environment variables');
+    });
+
+    it('should reject trusted client secrets with unexpected length', async () => {
+      process.env.MARKET_TRUSTED_CLIENT_SECRET = 'a'.repeat(83);
+
+      await expect(import('../app')).rejects.toThrow('Invalid environment variables');
     });
   });
 });

@@ -6,8 +6,9 @@ import { Plus } from 'lucide-react';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import SubmitRepoModal from '@/features/NexusRegistry/SubmitRepoModal';
+
 import { useUserDetailContext } from './DetailProvider';
-import SubmitRepoModal from './SubmitRepoModal';
 import UserSkillCard from './UserSkillCard';
 
 interface UserSkillListProps {

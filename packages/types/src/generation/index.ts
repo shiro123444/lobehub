@@ -92,3 +92,10 @@ export interface GenerationBatch {
   provider: string;
   width?: number | null;
 }
+
+export interface ImageGenerationGalleryItem {
+  batch: Pick<GenerationBatch, 'config' | 'createdAt' | 'height' | 'id' | 'model' | 'prompt' | 'provider' | 'width'> & {
+    topicId: string;
+  };
+  generation: Generation;
+}

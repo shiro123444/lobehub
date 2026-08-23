@@ -45,6 +45,7 @@ import ModelScopeProvider from './modelscope';
 import MoonshotProvider from './moonshot';
 import NebiusProvider from './nebius';
 import NewAPIProvider from './newapi';
+import NexusProvider from './nexus';
 import NovitaProvider from './novita';
 import NvidiaProvider from './nvidia';
 import OllamaProvider from './ollama';
@@ -140,7 +141,7 @@ export const LOBE_DEFAULT_MODEL_LIST: ChatModelCard[] = [
   VercelAIGatewayProvider.chatModels,
 ].flat();
 
-export const DEFAULT_MODEL_PROVIDER_LIST = [
+const ALL_MODEL_PROVIDER_LIST = [
   ...(ENABLE_BUSINESS_FEATURES ? [LobeHubProvider] : []),
   AnthropicProvider,
   GoogleProvider,
@@ -167,6 +168,7 @@ export const DEFAULT_MODEL_PROVIDER_LIST = [
   GithubProvider,
   GithubCopilotProvider,
   NewAPIProvider,
+  NexusProvider,
   BflProvider,
   NovitaProvider,
   PPIOProvider,
@@ -224,6 +226,12 @@ export const DEFAULT_MODEL_PROVIDER_LIST = [
   StreamLakeProvider,
 ];
 
+const NEXUS_VISIBLE_PROVIDER_IDS = new Set([NexusProvider.id]);
+
+export const DEFAULT_MODEL_PROVIDER_LIST = ALL_MODEL_PROVIDER_LIST.filter((provider) =>
+  NEXUS_VISIBLE_PROVIDER_IDS.has(provider.id),
+);
+
 export const filterEnabledModels = (provider: ModelProviderCard) => {
   return provider.chatModels.filter((v) => v.enabled).map((m) => m.id);
 };
@@ -278,6 +286,7 @@ export { default as ModelScopeProviderCard } from './modelscope';
 export { default as MoonshotProviderCard } from './moonshot';
 export { default as NebiusProviderCard } from './nebius';
 export { default as NewAPIProviderCard } from './newapi';
+export { default as NexusProviderCard } from './nexus';
 export { default as NovitaProviderCard } from './novita';
 export { default as NvidiaProviderCard } from './nvidia';
 export { default as OllamaProviderCard } from './ollama';

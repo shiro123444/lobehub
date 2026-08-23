@@ -1,9 +1,7 @@
 'use client';
 
-import { DEFAULT_INBOX_AVATAR, SESSION_CHAT_URL } from '@lobechat/const';
 import { Claude, Cline, Cursor, OpenAI } from '@lobehub/icons';
 import {
-  Avatar,
   Block,
   Button,
   Flexbox,
@@ -14,18 +12,21 @@ import {
   Select,
   Text,
 } from '@lobehub/ui';
-import { Divider } from 'antd';
+import { App, Divider } from 'antd';
 import { createStaticStyles, cx } from 'antd-style';
-import { BotIcon, UserRoundIcon } from 'lucide-react';
+import { BotIcon, CopyIcon, DownloadIcon, UserRoundIcon } from 'lucide-react';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import urlJoin from 'url-join';
 
-import { useAgentStore } from '@/store/agent';
-import { builtinAgentSelectors } from '@/store/agent/selectors';
-import { useChatStore } from '@/store/chat';
+import { useAppOrigin } from '@/hooks/useAppOrigin';
+import { agentSkillService } from '@/services/skill';
+import { nexusRegistryService } from '@/services/nexusRegistry';
+import { useToolStore } from '@/store/tool';
+import { agentSkillsSelectors } from '@/store/tool/slices/agentSkills/selectors';
 
 import Title from '../../../../components/Title';
+import { useDetailContext } from '../DetailProvider';
 import VsCodeIcon from './VsCodeIcon';
 
 type GuideMode = 'agent' | 'human';
@@ -55,7 +56,11 @@ interface PlatformProps {
   mobile?: boolean;
 }
 
-const genInstallCommand = (identifier?: string, platform?: PlatformType) => {
+const genInstallCommand = (
+  identifier?: string,
+  platform?: PlatformType,
+  communitySkillUrl?: string,
+) => {
   const id = identifier || '<skill-identifier>';
 
   const agentMap: Record<PlatformType, string> = {
@@ -80,7 +85,7 @@ const genInstallCommand = (identifier?: string, platform?: PlatformType) => {
     default: {
       return `# Recommended for LobeHub users:
 # Open the marketplace page and install with one click:
-# https://lobechat.com/community/skills/${id}`;
+# ${communitySkillUrl || urlJoin('/community/skill', id)}`;
     }
   }
 };
@@ -116,11 +121,18 @@ const genLayout = (
 const Platform = memo<PlatformProps>(
   ({ lite, identifier, mobile, expandCodeByDefault, downloadUrl }) => {
     const { t } = useTranslation('discover');
-    const navigate = useNavigate();
-    const inboxAgentId = useAgentStore(builtinAgentSelectors.inboxAgentId);
-    const sendMessage = useChatStore((s) => s.sendMessage);
+    const { message } = App.useApp();
+    const appOrigin = useAppOrigin();
+    const { description, installation, name } = useDetailContext();
     const [active, setActive] = useState<PlatformType>(PlatformType.Claude);
+    const [installing, setInstalling] = useState(false);
     const [mode, setMode] = useState<GuideMode>('agent');
+    const installed = useToolStore(agentSkillsSelectors.isAgentSkill(identifier ?? ''));
+    const refreshAgentSkills = useToolStore((s) => s.refreshAgentSkills);
+    const communitySkillUrl = useMemo(
+      () => new URL(urlJoin('/community/skill', identifier || '<skill-identifier>'), appOrigin).toString(),
+      [appOrigin, identifier],
+    );
 
     const options = [
       {
@@ -191,22 +203,47 @@ const Platform = memo<PlatformProps>(
       }
     }, [active, t]);
 
-    const command = genInstallCommand(identifier, active);
+    const command = genInstallCommand(identifier, active, communitySkillUrl);
+    const agentPrompt = useMemo(() => {
+      const prompt = installation?.agent?.trim();
+      if (prompt) return prompt;
 
-    const agentPrompt = `Curl https://lobehub.com/skills/${identifier}/skill.md, then follow the instructions to set up LobeHub Skills Marketplace and install the skill. Once installed, read the SKILL.md file in the installed directory and follow its instructions to complete the task.`;
+      return [
+        `You are an agent using the ${name || identifier || 'skill'} skill.`,
+        description ? `Summary: ${description}` : undefined,
+        identifier ? `Skill identifier: ${identifier}` : undefined,
+        'Read SKILL.md first, then review every resource file before acting.',
+        'Follow the skill instructions exactly and stay inside the skill scope.',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+    }, [description, identifier, installation?.agent, name]);
+    const humanGuide = useMemo(() => installation?.human?.trim(), [installation?.human]);
 
-    const handleUseOnLobeAI = useCallback(() => {
-      if (!inboxAgentId) return;
+    const handleCopyPrompt = useCallback(async () => {
+      try {
+        await navigator.clipboard.writeText(agentPrompt);
+        message.success(t('skills.details.sidebar.agent.copied'));
+      } catch (error) {
+        console.error('Failed to copy skill prompt:', error);
+      }
+    }, [agentPrompt, message, t]);
 
-      // Send message to LobeAI
-      sendMessage({
-        context: { agentId: inboxAgentId },
-        message: agentPrompt,
-      });
+    const handleInstallToNexus = useCallback(async () => {
+      if (!identifier || installing || installed) return;
 
-      // Navigate to LobeAI chat session
-      navigate(SESSION_CHAT_URL(inboxAgentId, mobile));
-    }, [agentPrompt, inboxAgentId, mobile, navigate, sendMessage]);
+      setInstalling(true);
+      try {
+        await nexusRegistryService.installSkill({ identifier });
+        await refreshAgentSkills();
+        message.success(t('protocolInstall.messages.installSuccess', { name: identifier, ns: 'plugin' }));
+      } catch (error) {
+        console.error('Failed to install skill:', error);
+        message.error(t('protocolInstall.messages.installError', { ns: 'plugin' }));
+      } finally {
+        setInstalling(false);
+      }
+    }, [identifier, installed, installing, message, refreshAgentSkills, t]);
 
     return (
       <Block gap={lite ? 0 : 16} padding={4} variant={lite ? 'outlined' : 'borderless'}>
@@ -239,27 +276,32 @@ const Platform = memo<PlatformProps>(
             ) : (
               <Title>{t('skills.details.sidebar.agent.title')}</Title>
             )}
-            <Highlighter
-              fullFeatured
-              wrap
-              className={cx(lite && styles.lite)}
-              defaultExpand={expandCodeByDefault ?? false}
-              fileName={'Agent prompt'}
-              language={'bash'}
-              style={{ fontSize: 12 }}
-              variant={lite ? 'borderless' : 'outlined'}
-            >
-              {agentPrompt}
-            </Highlighter>
-            <Flexbox padding={8}>
+            <Flexbox gap={8} padding={8}>
+              <Flexbox horizontal align={'center'} gap={8} justify={'space-between'}>
+                <Text fontSize={12} type={'secondary'}>
+                  {t('skills.details.sidebar.agent.useOnLobeAI')}
+                </Text>
+                <Button
+                  icon={<Icon icon={CopyIcon} />}
+                  size={'small'}
+                  onClick={handleCopyPrompt}
+                >
+                  {t('skills.details.sidebar.agent.copyPrompt')}
+                </Button>
+              </Flexbox>
+              <Markdown variant={'chat'}>{agentPrompt}</Markdown>
               <Button
                 block
-                icon={<Avatar avatar={DEFAULT_INBOX_AVATAR} size={18} />}
+                disabled={installed}
+                icon={<Icon icon={DownloadIcon} />}
+                loading={installing}
                 size={'large'}
                 type={'primary'}
-                onClick={handleUseOnLobeAI}
+                onClick={handleInstallToNexus}
               >
-                {t('skills.details.sidebar.agent.useOnLobeAI')}
+                {installed
+                  ? t('protocolInstall.actions.installed', { ns: 'plugin' })
+                  : t('protocolInstall.actions.install', { ns: 'plugin' })}
               </Button>
             </Flexbox>
           </Flexbox>
@@ -289,7 +331,7 @@ const Platform = memo<PlatformProps>(
             )}
             <Flexbox>
               {!lite && <Title>{t('skills.details.sidebar.platform.title', { platform })}</Title>}
-              <Markdown variant={'chat'}>{steps}</Markdown>
+              <Markdown variant={'chat'}>{humanGuide || steps}</Markdown>
             </Flexbox>
             {lite && <Divider dashed style={{ margin: 0 }} />}
             <Highlighter

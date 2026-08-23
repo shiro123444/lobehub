@@ -11,6 +11,7 @@ import DesktopOnboarding from '@/routes/(desktop)/desktop-onboarding';
 import DesktopMainLayout from '@/routes/(main)/_layout';
 import ImagePage from '@/routes/(main)/(create)/image';
 import DesktopImageLayout from '@/routes/(main)/(create)/image/_layout';
+import ImageGalleryPage from '@/routes/(main)/(create)/image/gallery';
 import VideoPage from '@/routes/(main)/(create)/video';
 import DesktopVideoLayout from '@/routes/(main)/(create)/video/_layout';
 import TaskWorkspaceLayout from '@/routes/(main)/(task-workspace)/_layout';
@@ -36,13 +37,16 @@ import CommunityListLayout from '@/routes/(main)/community/(list)/_layout';
 import CommunityListHomePage from '@/routes/(main)/community/(list)/(home)';
 import CommunityListAgentPage from '@/routes/(main)/community/(list)/agent';
 import CommunityListAgentLayout from '@/routes/(main)/community/(list)/agent/_layout';
+import CommunityListAnalyticsPage from '@/routes/(main)/community/(list)/analytics';
 import CommunityListMcpPage from '@/routes/(main)/community/(list)/mcp';
 import CommunityListMcpLayout from '@/routes/(main)/community/(list)/mcp/_layout';
 import CommunityListModelPage from '@/routes/(main)/community/(list)/model';
 import CommunityListModelLayout from '@/routes/(main)/community/(list)/model/_layout';
 import CommunityListProviderPage from '@/routes/(main)/community/(list)/provider';
+import CommunityListReviewPage from '@/routes/(main)/community/(list)/review';
 import CommunityListSkillPage from '@/routes/(main)/community/(list)/skill';
 import CommunityListSkillLayout from '@/routes/(main)/community/(list)/skill/_layout';
+import CommunityListSubmissionsPage from '@/routes/(main)/community/(list)/submissions';
 import DevtoolsIndexPage from '@/routes/(main)/devtools';
 import DevtoolsLayout from '@/routes/(main)/devtools/_layout';
 import DevtoolsToolPage from '@/routes/(main)/devtools/[identifier]';
@@ -224,6 +228,18 @@ export const desktopRoutes: RouteObject[] = [
                 path: 'mcp',
               },
               {
+                element: <CommunityListAnalyticsPage />,
+                path: 'analytics',
+              },
+              {
+                element: <CommunityListSubmissionsPage />,
+                path: 'submissions',
+              },
+              {
+                element: <CommunityListReviewPage />,
+                path: 'review',
+              },
+              {
                 element: <CommunityListHomePage />,
                 index: true,
               },
@@ -395,6 +411,10 @@ export const desktopRoutes: RouteObject[] = [
           {
             element: <ImagePage />,
             index: true,
+          },
+          {
+            element: <ImageGalleryPage />,
+            path: 'gallery',
           },
         ],
         element: <DesktopImageLayout />,

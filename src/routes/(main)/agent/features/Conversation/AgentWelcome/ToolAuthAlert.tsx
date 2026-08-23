@@ -13,6 +13,8 @@ import { useTranslation } from 'react-i18next';
 import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
 import { useAgentStore } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors';
+import { useServerConfigStore } from '@/store/serverConfig';
+import { serverConfigSelectors } from '@/store/serverConfig/selectors';
 import { useToolStore } from '@/store/tool';
 import { type KlavisServer } from '@/store/tool/slices/klavisStore';
 import { KlavisServerStatus, klavisStoreSelectors } from '@/store/tool/slices/klavisStore';
@@ -282,6 +284,9 @@ const ToolAuthAlert = memo(() => {
   const plugins = useAgentStore(agentSelectors.currentAgentPlugins, isEqual);
   const klavisServers = useToolStore(klavisStoreSelectors.getServers, isEqual);
   const { isAuthenticated: isMarketAuthenticated } = useMarketAuth();
+  const enableMarketTrustedClient = useServerConfigStore(
+    serverConfigSelectors.enableMarketTrustedClient,
+  );
 
   // Filter out tools that need authorization
   const pendingAuthTools = useMemo<PendingAuthTool[]>(() => {
@@ -299,6 +304,9 @@ const ToolAuthAlert = memo(() => {
         continue;
       }
 
+      // Skip Market auth check when trusted client is enabled (no user login needed)
+      if (enableMarketTrustedClient) continue;
+
       // Check if this is a Market auth tool
       const marketTool = MARKET_AUTH_TOOLS.find((t) => t.identifier === pluginId);
       if (marketTool && !isMarketAuthenticated) {
@@ -307,7 +315,7 @@ const ToolAuthAlert = memo(() => {
     }
 
     return result;
-  }, [plugins, klavisServers, isMarketAuthenticated]);
+  }, [plugins, klavisServers, isMarketAuthenticated, enableMarketTrustedClient]);
 
   // Don't render if no pending auth tools
   if (pendingAuthTools.length === 0) {

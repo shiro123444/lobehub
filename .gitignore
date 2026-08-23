@@ -151,3 +151,11 @@ docs/superpowers/
 
 # Kagura agent runtime
 .kagura/
+
+# Local Scratch & Agent Cli artifacts
+scratch/
+.antigravity/
+.antigravitycli/
+image-*.png
+*.png
+

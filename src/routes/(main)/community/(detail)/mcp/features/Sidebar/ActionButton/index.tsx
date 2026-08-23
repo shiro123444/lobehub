@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 
 import MCPInstallProgress from '@/features/MCP/MCPInstallProgress';
 import { useDetailContext } from '@/features/MCPPluginDetail/DetailProvider';
-import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
 
@@ -23,9 +22,8 @@ const styles = createStaticStyles(({ css }) => ({
 const ActionButton = memo(() => {
   const { t } = useTranslation(['discover', 'plugin']);
   const detailContext = useDetailContext();
-  const { identifier, haveCloudEndpoint } = detailContext;
+  const { identifier } = detailContext;
   const [isLoading, setIsLoading] = useState(false);
-  const { isAuthenticated, isLoading: isAuthLoading, signIn } = useMarketAuth();
 
   const [installed, installMCPPlugin, uninstallMCPPlugin] = useToolStore((s) => [
     pluginSelectors.isPluginInstalled(identifier!)(s),
@@ -33,22 +31,9 @@ const ActionButton = memo(() => {
     s.uninstallMCPPlugin,
   ]);
 
-  // Check if this is a cloud MCP plugin
-  const isCloudMcp = haveCloudEndpoint;
-
   const installPlugin = async () => {
     if (!identifier) return;
 
-    // If this is a cloud MCP and user is not authenticated, request authorization first
-    if (isCloudMcp && !isAuthenticated) {
-      try {
-        await signIn();
-      } catch {
-        return; // Don't proceed with installation if auth fails
-      }
-    }
-
-    // Proceed with installation
     setIsLoading(true);
     try {
       await installMCPPlugin(identifier);
@@ -57,7 +42,7 @@ const ActionButton = memo(() => {
     }
   };
 
-  const buttonLoading = isLoading || isAuthLoading;
+  const buttonLoading = isLoading;
 
   return installed ? (
     <Flexbox horizontal gap={8}>

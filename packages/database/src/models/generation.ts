@@ -1,20 +1,22 @@
 import type {
   AsyncTaskError,
-  AsyncTaskStatus,
   Generation,
   GenerationAsset,
+  GenerationConfig,
+  ImageGenerationGalleryItem,
   ImageGenerationAsset,
   VideoGenerationAsset,
 } from '@lobechat/types';
-import { FileSource } from '@lobechat/types';
+import { AsyncTaskStatus, FileSource } from '@lobechat/types';
 import debug from 'debug';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 import { FileService } from '@/server/services/file';
 
 import type { NewFile } from '../schemas';
 import type { GenerationItem, GenerationWithAsyncTask, NewGeneration } from '../schemas/generation';
-import { generations } from '../schemas/generation';
+import { asyncTasks } from '../schemas/asyncTask';
+import { generationBatches, generationTopics, generations } from '../schemas/generation';
 import type { LobeChatDatabase, Transaction } from '../type';
 import { FileModel } from './file';
 
@@ -171,6 +173,70 @@ export class GenerationModel {
     }
 
     return await this.transformGeneration(generation);
+  }
+
+  async queryImageGallery(limit: number = 80): Promise<ImageGenerationGalleryItem[]> {
+    log('Querying image gallery for user: %s, limit: %d', this.userId, limit);
+
+    const rows = await this.db
+      .select({
+        batch: generationBatches,
+        generation: generations,
+        task: asyncTasks,
+      })
+      .from(generations)
+      .innerJoin(generationBatches, eq(generations.generationBatchId, generationBatches.id))
+      .innerJoin(generationTopics, eq(generationBatches.generationTopicId, generationTopics.id))
+      .leftJoin(asyncTasks, eq(generations.asyncTaskId, asyncTasks.id))
+      .where(
+        and(
+          eq(generations.userId, this.userId),
+          eq(generationBatches.userId, this.userId),
+          eq(generationTopics.userId, this.userId),
+          eq(generationTopics.type, 'image'),
+          isNotNull(generations.asset),
+          eq(asyncTasks.status, AsyncTaskStatus.Success),
+        ),
+      )
+      .orderBy(desc(generations.createdAt))
+      .limit(limit);
+
+    return await Promise.all(
+      rows.map(async ({ batch, generation, task }) => {
+        const transformedGeneration = await this.transformGeneration({
+          ...generation,
+          asyncTask: task ?? undefined,
+        });
+
+        const config = { ...((batch.config ?? {}) as GenerationConfig) };
+        if (config.imageUrl) {
+          config.imageUrl = await this.fileService.getFullFileUrl(config.imageUrl);
+        }
+        if (config.endImageUrl) {
+          config.endImageUrl = await this.fileService.getFullFileUrl(config.endImageUrl);
+        }
+        if (Array.isArray(config.imageUrls)) {
+          config.imageUrls = await Promise.all(
+            config.imageUrls.map((url) => this.fileService.getFullFileUrl(url)),
+          );
+        }
+
+        return {
+          batch: {
+            config,
+            createdAt: batch.createdAt,
+            height: batch.height,
+            id: batch.id,
+            model: batch.model,
+            prompt: batch.prompt,
+            provider: batch.provider,
+            topicId: batch.generationTopicId,
+            width: batch.width,
+          },
+          generation: transformedGeneration,
+        };
+      }),
+    );
   }
 
   /**
