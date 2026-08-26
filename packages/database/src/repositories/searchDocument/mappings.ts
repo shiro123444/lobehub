@@ -108,7 +108,7 @@ export const SEARCH_INDEX_DEFINITIONS = {
         title: mixedText,
       },
     },
-    queryFields: ['title', 'description'],
+    queryFields: ['title', 'description', 'content'],
     sourceTable: 'chat_groups',
   } satisfies SearchIndexDefinition<'chatGroups'>,
   documents: {
@@ -329,7 +329,7 @@ export const SEARCH_INDEX_DEFINITIONS = {
         workspace_id: keyword,
       },
     },
-    queryFields: ['content'],
+    queryFields: ['content', 'summary'],
     sourceTable: 'messages',
   } satisfies SearchIndexDefinition<'messages'>,
   personaDocuments: {

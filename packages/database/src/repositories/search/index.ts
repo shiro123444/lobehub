@@ -14,6 +14,7 @@ import type {
   SearchResultType,
 } from './types';
 
+export * from './elasticsearch';
 export { PostgresSearchBackend } from './postgres';
 export * from './types';
 

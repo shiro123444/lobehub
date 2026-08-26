@@ -26,6 +26,15 @@ describe('search index mappings', () => {
     }
   });
 
+  it('includes the conversation fields used by the formal Elasticsearch provider', () => {
+    expect(SEARCH_INDEX_DEFINITIONS.chatGroups.queryFields).toEqual([
+      'title',
+      'description',
+      'content',
+    ]);
+    expect(SEARCH_INDEX_DEFINITIONS.messages.queryFields).toEqual(['content', 'summary']);
+  });
+
   it('provides deployment-neutral versioned alias and physical names', () => {
     expect(SEARCH_INDEX_SCHEMA_VERSION).toBe(1);
     expect(getSearchIndexAlias('lobehub-dev', 'knowledgeBases')).toBe(
