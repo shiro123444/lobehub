@@ -1,7 +1,19 @@
-import { and, eq, inArray, isNotNull, isNull, ne, or, type SQL } from 'drizzle-orm';
+import { LIBRARY_HIDDEN_FILE_SOURCES } from '@lobechat/types';
+import { and, eq, inArray, isNotNull, isNull, ne, notInArray, or, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
-import { agents, chatGroups, messages, sessions, topics } from '../../schemas';
+import {
+  agents,
+  chatGroups,
+  DOCUMENT_FOLDER_TYPE,
+  documents,
+  files,
+  knowledgeBaseFiles,
+  knowledgeBases,
+  messages,
+  sessions,
+  topics,
+} from '../../schemas';
 import type { LobeChatDatabase } from '../../type';
 import { normalizeInboxAgentMeta, normalizeInboxAgentTitle } from '../../utils/inboxAgent';
 import { buildWorkspaceWhere } from '../../utils/workspace';
@@ -9,7 +21,12 @@ import { getSearchIndexAlias } from '../searchDocument';
 import type {
   AgentSearchResult,
   ChatGroupSearchResult,
+  FileSearchResult,
+  FolderSearchResult,
+  KnowledgeBaseDocumentHit,
+  KnowledgeBaseSearchResult,
   MessageSearchResult,
+  PageSearchResult,
   SearchBackend,
   SearchBackendCandidate,
   SearchBackendEntity,
@@ -38,6 +55,33 @@ export const isElasticsearchConversationEntity = (
   entity: SearchBackendEntity,
 ): entity is ElasticsearchConversationEntity =>
   Object.hasOwn(ELASTICSEARCH_CONVERSATION_QUERY_FIELDS, entity);
+
+export const ELASTICSEARCH_RESOURCE_QUERY_FIELDS = {
+  files: ['name^4'],
+  knowledgeBases: ['name^4', 'description'],
+} as const;
+
+const ELASTICSEARCH_DOCUMENT_QUERY_FIELDS = {
+  folder: ['title^4', 'slug^3', 'description^2'],
+  knowledgeBaseDocument: ['title^4', 'slug^3', 'content'],
+  page: ['title^4', 'slug^3', 'content'],
+} as const;
+
+export type ElasticsearchResourceEntity =
+  keyof typeof ELASTICSEARCH_RESOURCE_QUERY_FIELDS | 'documents';
+
+export const isElasticsearchResourceEntity = (
+  entity: SearchBackendEntity,
+): entity is ElasticsearchResourceEntity =>
+  entity === 'documents' || Object.hasOwn(ELASTICSEARCH_RESOURCE_QUERY_FIELDS, entity);
+
+export type ElasticsearchSearchEntity =
+  ElasticsearchConversationEntity | ElasticsearchResourceEntity;
+
+export const isElasticsearchSearchEntity = (
+  entity: SearchBackendEntity,
+): entity is ElasticsearchSearchEntity =>
+  isElasticsearchConversationEntity(entity) || isElasticsearchResourceEntity(entity);
 
 const messageTopicAgents = alias(agents, 'search_message_topic_agents');
 const messageTopicChatGroups = alias(chatGroups, 'search_message_topic_chat_groups');
@@ -76,8 +120,16 @@ interface HydratedScore {
   score: number;
 }
 
-type ElasticsearchConversationSearchResult =
-  AgentSearchResult | ChatGroupSearchResult | MessageSearchResult | TopicSearchResult;
+type ElasticsearchSearchResult =
+  | AgentSearchResult
+  | ChatGroupSearchResult
+  | FileSearchResult
+  | FolderSearchResult
+  | KnowledgeBaseDocumentHit
+  | KnowledgeBaseSearchResult
+  | MessageSearchResult
+  | PageSearchResult
+  | TopicSearchResult;
 
 const normalizeQuery = (query: string) =>
   query.trim().replaceAll('-', ' ').split(/\s+/).filter(Boolean).join(' ');
@@ -94,7 +146,7 @@ const visibleParent = (
 ) => or(isNull(foreignKey), isNotNull(id)) as SQL;
 
 /**
- * Elasticsearch candidate provider for the conversation entities migrated in LOBE-13461.
+ * Elasticsearch candidate provider for the product-search entities migrated in LOBE-13461/13462.
  * Every hit is reloaded through PostgreSQL with current scope and parent visibility checks.
  */
 export class ElasticsearchSearchBackend implements SearchBackend {
@@ -116,14 +168,21 @@ export class ElasticsearchSearchBackend implements SearchBackend {
 
   async search(
     request: SearchBackendRequest,
-  ): Promise<SearchBackendResponse<ElasticsearchConversationSearchResult>> {
+  ): Promise<SearchBackendResponse<ElasticsearchSearchResult>> {
     const entity = request.entity;
-    if (!isElasticsearchConversationEntity(entity)) {
+    if (!isElasticsearchSearchEntity(entity)) {
       throw new Error(`Unsupported Elasticsearch search entity: ${request.entity}`);
     }
 
     const query = normalizeQuery(request.query.text);
     if (!query) return { candidates: [], items: [] };
+    if (
+      entity === 'documents' &&
+      request.filters.documentKind === 'knowledgeBaseDocument' &&
+      !request.filters.knowledgeBaseIds?.length
+    ) {
+      return { candidates: [], items: [] };
+    }
 
     const hits = await this.searchCandidates(request, entity, query);
     const candidates = hits.map(({ id, score }) => ({ id, score }));
@@ -140,7 +199,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         items: await this.hydrateChatGroups(hits, request.scope, request.pagination.limit),
       };
     }
-    if (request.entity === 'topics') {
+    if (entity === 'topics') {
       return {
         candidates,
         items: await this.hydrateTopics(
@@ -152,19 +211,78 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       };
     }
 
-    return {
-      candidates,
-      items: await this.hydrateMessages(
-        hits,
-        request.scope,
-        request.pagination.limit,
-        request.filters.agentId,
-      ),
-    };
+    if (entity === 'messages') {
+      return {
+        candidates,
+        items: await this.hydrateMessages(
+          hits,
+          request.scope,
+          request.pagination.limit,
+          request.filters.agentId,
+        ),
+      };
+    }
+    if (entity === 'files') {
+      return {
+        candidates,
+        items: await this.hydrateFiles(
+          hits,
+          request.scope,
+          request.pagination.limit,
+          request.filters.excludeKnowledgeBaseIds,
+        ),
+      };
+    }
+    if (entity === 'knowledgeBases') {
+      return {
+        candidates,
+        items: await this.hydrateKnowledgeBases(
+          hits,
+          request.scope,
+          request.pagination.limit,
+          request.filters.excludeKnowledgeBaseIds,
+        ),
+      };
+    }
+    if (request.filters.documentKind === 'folder') {
+      return {
+        candidates,
+        items: await this.hydrateFolders(
+          hits,
+          request.scope,
+          request.pagination.limit,
+          request.filters.excludeKnowledgeBaseIds,
+        ),
+      };
+    }
+    if (request.filters.documentKind === 'page') {
+      return {
+        candidates,
+        items: await this.hydratePages(
+          hits,
+          request.scope,
+          request.pagination.limit,
+          request.filters.excludeKnowledgeBaseIds,
+        ),
+      };
+    }
+    if (request.filters.documentKind === 'knowledgeBaseDocument') {
+      return {
+        candidates,
+        items: await this.hydrateKnowledgeBaseDocuments(
+          hits,
+          request.scope,
+          request.pagination.limit,
+          request.filters.knowledgeBaseIds ?? [],
+        ),
+      };
+    }
+
+    throw new Error('Elasticsearch document search requires a supported document kind');
   }
 
   private buildScopeClauses(
-    entity: ElasticsearchConversationEntity,
+    entity: ElasticsearchSearchEntity,
     scope: SearchBackendScope,
   ): { filter: Array<Record<string, unknown>>; mustNot: Array<Record<string, unknown>> } {
     if (!scope.workspaceId) {
@@ -175,7 +293,13 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     }
 
     const filter: Array<Record<string, unknown>> = [{ term: { workspace_id: scope.workspaceId } }];
-    if (entity === 'agents' || entity === 'chatGroups') {
+    if (
+      entity === 'agents' ||
+      entity === 'chatGroups' ||
+      entity === 'documents' ||
+      entity === 'files' ||
+      entity === 'knowledgeBases'
+    ) {
       filter.push(
         scope.callerAgentVisibility === 'public'
           ? { term: { visibility: 'public' } }
@@ -193,7 +317,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
 
   private async searchCandidates(
     request: SearchBackendRequest,
-    entity: ElasticsearchConversationEntity,
+    entity: ElasticsearchSearchEntity,
     query: string,
   ): Promise<CandidateHit[]> {
     const { filter, mustNot } = this.buildScopeClauses(entity, request.scope);
@@ -201,6 +325,45 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       filter.push({ term: { agent_id: request.filters.agentId } });
     }
     if (entity === 'messages') mustNot.push({ term: { role: 'tool' } });
+    if (entity === 'files') {
+      mustNot.push(
+        { term: { file_type: 'custom/document' } },
+        { terms: { source: LIBRARY_HIDDEN_FILE_SOURCES } },
+      );
+      if (request.filters.excludeKnowledgeBaseIds?.length) {
+        mustNot.push({ terms: { knowledge_base_ids: request.filters.excludeKnowledgeBaseIds } });
+      }
+    }
+    if (entity === 'knowledgeBases' && request.filters.excludeKnowledgeBaseIds?.length) {
+      mustNot.push({ terms: { id: request.filters.excludeKnowledgeBaseIds } });
+    }
+    if (entity === 'documents') {
+      const { documentKind } = request.filters;
+      if (!documentKind) {
+        throw new Error('Elasticsearch document search requires a supported document kind');
+      }
+      if (documentKind === 'folder') {
+        filter.push({ term: { file_type: DOCUMENT_FOLDER_TYPE } });
+      } else if (documentKind === 'page') {
+        filter.push({ term: { file_type: 'custom/document' } });
+      } else {
+        filter.push({ terms: { knowledge_base_ids: request.filters.knowledgeBaseIds ?? [] } });
+        mustNot.push({ term: { file_type: DOCUMENT_FOLDER_TYPE } });
+      }
+      if (
+        documentKind !== 'knowledgeBaseDocument' &&
+        request.filters.excludeKnowledgeBaseIds?.length
+      ) {
+        mustNot.push({ terms: { knowledge_base_ids: request.filters.excludeKnowledgeBaseIds } });
+      }
+    }
+
+    const fields =
+      entity === 'documents'
+        ? ELASTICSEARCH_DOCUMENT_QUERY_FIELDS[request.filters.documentKind!]
+        : isElasticsearchConversationEntity(entity)
+          ? ELASTICSEARCH_CONVERSATION_QUERY_FIELDS[entity]
+          : ELASTICSEARCH_RESOURCE_QUERY_FIELDS[entity];
 
     const response = await this.client.search({
       body: {
@@ -211,7 +374,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
             must: [
               {
                 multi_match: {
-                  fields: ELASTICSEARCH_CONVERSATION_QUERY_FIELDS[entity],
+                  fields,
                   operator: 'and',
                   query,
                   type: 'best_fields',
@@ -521,6 +684,337 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         title: truncate(row.content) || '',
         topicId: row.topicId,
         type: 'message' as const,
+        updatedAt: row.updatedAt,
+      }));
+  }
+
+  private async getKnowledgeBaseIdsByFile(
+    fileIds: string[],
+    scope?: SearchBackendScope,
+  ): Promise<Map<string, string[]>> {
+    if (fileIds.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({
+        fileId: knowledgeBaseFiles.fileId,
+        knowledgeBaseId: knowledgeBaseFiles.knowledgeBaseId,
+      })
+      .from(knowledgeBaseFiles)
+      .where(
+        and(
+          inArray(knowledgeBaseFiles.fileId, fileIds),
+          scope ? buildWorkspaceWhere(scope, knowledgeBaseFiles) : undefined,
+        ),
+      );
+    const idsByFile = new Map<string, Set<string>>();
+    for (const { fileId, knowledgeBaseId } of rows) {
+      const ids = idsByFile.get(fileId) ?? new Set<string>();
+      ids.add(knowledgeBaseId);
+      idsByFile.set(fileId, ids);
+    }
+
+    return new Map(
+      [...idsByFile.entries()].map(([fileId, ids]) => [fileId, [...ids].sort()] as const),
+    );
+  }
+
+  private async hydrateFiles(
+    hits: CandidateHit[],
+    scope: SearchBackendScope,
+    limit: number,
+    excludeKnowledgeBaseIds: string[] = [],
+  ): Promise<FileSearchResult[]> {
+    if (hits.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        createdAt: files.createdAt,
+        fileType: files.fileType,
+        id: files.id,
+        name: files.name,
+        size: files.size,
+        updatedAt: files.updatedAt,
+        url: files.url,
+      })
+      .from(files)
+      .where(
+        and(
+          inArray(
+            files.id,
+            hits.map(({ id }) => id),
+          ),
+          buildWorkspaceWhere(scope, files),
+          ne(files.fileType, 'custom/document'),
+          or(isNull(files.source), notInArray(files.source, LIBRARY_HIDDEN_FILE_SOURCES)),
+        ),
+      );
+    const fileIds = rows.map(({ id }) => id);
+    const knowledgeBaseIdsByFile = await this.getKnowledgeBaseIdsByFile(fileIds);
+    const excluded = new Set(excludeKnowledgeBaseIds);
+    const authorizedRows = rows.filter(({ id }) =>
+      (knowledgeBaseIdsByFile.get(id) ?? []).every(
+        (knowledgeBaseId) => !excluded.has(knowledgeBaseId),
+      ),
+    );
+    const scoredRows = this.attachScores(authorizedRows, hits).slice(0, limit);
+    const selectedFileIds = scoredRows.map(({ id }) => id);
+    const documentRows =
+      selectedFileIds.length === 0
+        ? []
+        : await this.db
+            .select({ content: documents.content, fileId: documents.fileId, id: documents.id })
+            .from(documents)
+            .where(
+              and(
+                inArray(documents.fileId, selectedFileIds),
+                buildWorkspaceWhere(scope, documents),
+              ),
+            );
+    const contentByFile = new Map<string, string | null>();
+    for (const row of documentRows.toSorted((left, right) => left.id.localeCompare(right.id))) {
+      if (row.fileId && !contentByFile.has(row.fileId)) contentByFile.set(row.fileId, row.content);
+    }
+
+    return scoredRows.map((row) => ({
+      createdAt: row.createdAt,
+      description: truncate(contentByFile.get(row.id)),
+      fileType: row.fileType,
+      id: row.id,
+      knowledgeBaseId: knowledgeBaseIdsByFile.get(row.id)?.[0] ?? null,
+      name: row.name,
+      relevance: row.relevance,
+      size: row.size,
+      title: row.name,
+      type: 'file' as const,
+      updatedAt: row.updatedAt,
+      url: row.url,
+    }));
+  }
+
+  private async hydrateFolders(
+    hits: CandidateHit[],
+    scope: SearchBackendScope,
+    limit: number,
+    excludeKnowledgeBaseIds: string[] = [],
+  ): Promise<FolderSearchResult[]> {
+    if (hits.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        createdAt: documents.createdAt,
+        description: documents.description,
+        fileId: documents.fileId,
+        filename: documents.filename,
+        id: documents.id,
+        knowledgeBaseId: documents.knowledgeBaseId,
+        slug: documents.slug,
+        title: documents.title,
+        updatedAt: documents.updatedAt,
+      })
+      .from(documents)
+      .where(
+        and(
+          inArray(
+            documents.id,
+            hits.map(({ id }) => id),
+          ),
+          buildWorkspaceWhere(scope, documents),
+          eq(documents.fileType, DOCUMENT_FOLDER_TYPE),
+        ),
+      );
+    const knowledgeBaseIdsByFile = await this.getKnowledgeBaseIdsByFile(
+      rows.flatMap(({ fileId }) => (fileId ? [fileId] : [])),
+    );
+    const excluded = new Set(excludeKnowledgeBaseIds);
+    const authorizedRows = rows.filter((row) => {
+      const knowledgeBaseIds = [
+        ...(row.knowledgeBaseId ? [row.knowledgeBaseId] : []),
+        ...(row.fileId ? (knowledgeBaseIdsByFile.get(row.fileId) ?? []) : []),
+      ];
+      return knowledgeBaseIds.every((knowledgeBaseId) => !excluded.has(knowledgeBaseId));
+    });
+
+    return this.attachScores(authorizedRows, hits)
+      .slice(0, limit)
+      .map((row) => ({
+        createdAt: row.createdAt,
+        description: row.description,
+        id: row.id,
+        knowledgeBaseId: row.knowledgeBaseId,
+        relevance: row.relevance,
+        slug: row.slug,
+        title: row.title || row.filename || 'Untitled',
+        type: 'folder' as const,
+        updatedAt: row.updatedAt,
+      }));
+  }
+
+  private async hydratePages(
+    hits: CandidateHit[],
+    scope: SearchBackendScope,
+    limit: number,
+    excludeKnowledgeBaseIds: string[] = [],
+  ): Promise<PageSearchResult[]> {
+    if (hits.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        createdAt: documents.createdAt,
+        fileId: documents.fileId,
+        filename: documents.filename,
+        id: documents.id,
+        knowledgeBaseId: documents.knowledgeBaseId,
+        title: documents.title,
+        updatedAt: documents.updatedAt,
+      })
+      .from(documents)
+      .where(
+        and(
+          inArray(
+            documents.id,
+            hits.map(({ id }) => id),
+          ),
+          buildWorkspaceWhere(scope, documents),
+          eq(documents.fileType, 'custom/document'),
+        ),
+      );
+    const knowledgeBaseIdsByFile = await this.getKnowledgeBaseIdsByFile(
+      rows.flatMap(({ fileId }) => (fileId ? [fileId] : [])),
+    );
+    const excluded = new Set(excludeKnowledgeBaseIds);
+    const authorizedRows = rows.filter((row) => {
+      const knowledgeBaseIds = [
+        ...(row.knowledgeBaseId ? [row.knowledgeBaseId] : []),
+        ...(row.fileId ? (knowledgeBaseIdsByFile.get(row.fileId) ?? []) : []),
+      ];
+      return knowledgeBaseIds.every((knowledgeBaseId) => !excluded.has(knowledgeBaseId));
+    });
+
+    return this.attachScores(authorizedRows, hits)
+      .slice(0, limit)
+      .map((row) => ({
+        createdAt: row.createdAt,
+        description: null,
+        id: row.id,
+        relevance: row.relevance,
+        title: row.title || row.filename || 'Untitled',
+        type: 'page' as const,
+        updatedAt: row.updatedAt,
+      }));
+  }
+
+  private async hydrateKnowledgeBaseDocuments(
+    hits: CandidateHit[],
+    scope: SearchBackendScope,
+    limit: number,
+    knowledgeBaseIds: string[],
+  ): Promise<KnowledgeBaseDocumentHit[]> {
+    if (hits.length === 0 || knowledgeBaseIds.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        fileId: documents.fileId,
+        filename: documents.filename,
+        id: documents.id,
+        knowledgeBaseId: documents.knowledgeBaseId,
+        title: documents.title,
+        updatedAt: documents.updatedAt,
+      })
+      .from(documents)
+      .where(
+        and(
+          inArray(
+            documents.id,
+            hits.map(({ id }) => id),
+          ),
+          buildWorkspaceWhere(scope, documents),
+          ne(documents.fileType, DOCUMENT_FOLDER_TYPE),
+        ),
+      );
+    const knowledgeBaseIdsByFile = await this.getKnowledgeBaseIdsByFile(
+      rows.flatMap(({ fileId }) => (fileId ? [fileId] : [])),
+      scope,
+    );
+    const requested = new Set(knowledgeBaseIds);
+    const authorizedRows = rows.flatMap((row) => {
+      const matchingKnowledgeBaseId =
+        row.knowledgeBaseId && requested.has(row.knowledgeBaseId)
+          ? row.knowledgeBaseId
+          : row.fileId
+            ? knowledgeBaseIdsByFile
+                .get(row.fileId)
+                ?.find((knowledgeBaseId) => requested.has(knowledgeBaseId))
+            : undefined;
+      return matchingKnowledgeBaseId ? [{ ...row, matchingKnowledgeBaseId }] : [];
+    });
+    const scoredRows = this.attachScores(authorizedRows, hits).slice(0, limit);
+    const selectedDocumentIds = scoredRows.map(({ id }) => id);
+    const contentRows =
+      selectedDocumentIds.length === 0
+        ? []
+        : await this.db
+            .select({ content: documents.content, id: documents.id })
+            .from(documents)
+            .where(
+              and(
+                inArray(documents.id, selectedDocumentIds),
+                buildWorkspaceWhere(scope, documents),
+              ),
+            );
+    const contentById = new Map(contentRows.map(({ content, id }) => [id, content] as const));
+
+    return scoredRows.map((row) => ({
+      documentId: row.id,
+      fileId: row.fileId ?? undefined,
+      knowledgeBaseId: row.matchingKnowledgeBaseId,
+      relevance: row.relevance,
+      snippet: truncate(contentById.get(row.id), 300) ?? '',
+      title: row.title || row.filename || 'Untitled',
+      updatedAt: row.updatedAt,
+    }));
+  }
+
+  private async hydrateKnowledgeBases(
+    hits: CandidateHit[],
+    scope: SearchBackendScope,
+    limit: number,
+    excludeKnowledgeBaseIds: string[] = [],
+  ): Promise<KnowledgeBaseSearchResult[]> {
+    if (hits.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        avatar: knowledgeBases.avatar,
+        createdAt: knowledgeBases.createdAt,
+        description: knowledgeBases.description,
+        id: knowledgeBases.id,
+        name: knowledgeBases.name,
+        updatedAt: knowledgeBases.updatedAt,
+      })
+      .from(knowledgeBases)
+      .where(
+        and(
+          inArray(
+            knowledgeBases.id,
+            hits.map(({ id }) => id),
+          ),
+          buildWorkspaceWhere(scope, knowledgeBases),
+          excludeKnowledgeBaseIds.length > 0
+            ? notInArray(knowledgeBases.id, excludeKnowledgeBaseIds)
+            : undefined,
+        ),
+      );
+
+    return this.attachScores(rows, hits)
+      .slice(0, limit)
+      .map((row) => ({
+        avatar: row.avatar,
+        createdAt: row.createdAt,
+        description: row.description,
+        id: row.id,
+        relevance: row.relevance,
+        title: row.name,
+        type: 'knowledgeBase' as const,
         updatedAt: row.updatedAt,
       }));
   }

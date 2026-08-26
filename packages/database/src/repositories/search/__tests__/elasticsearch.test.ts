@@ -1,10 +1,16 @@
 // @vitest-environment node
+import { FileSource } from '@lobechat/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
 import {
   agents,
   chatGroups,
+  DOCUMENT_FOLDER_TYPE,
+  documents,
+  files,
+  knowledgeBaseFiles,
+  knowledgeBases,
   messages,
   sessions,
   topics,
@@ -13,7 +19,7 @@ import {
 } from '../../../schemas';
 import type { LobeChatDatabase } from '../../../type';
 import { ElasticsearchSearchBackend, type ElasticsearchSearchClient } from '../elasticsearch';
-import type { SearchBackendRequest, SearchBackendScope } from '../types';
+import type { SearchBackendFilters, SearchBackendRequest, SearchBackendScope } from '../types';
 
 const db: LobeChatDatabase = await getTestDB();
 
@@ -27,13 +33,14 @@ const request = (
   entity: SearchBackendRequest['entity'],
   options: {
     agentId?: string;
+    filters?: Partial<SearchBackendFilters>;
     limit?: number;
     query?: string;
     scope?: Partial<SearchBackendScope>;
   } = {},
 ): SearchBackendRequest => ({
   entity,
-  filters: { agentId: options.agentId },
+  filters: { agentId: options.agentId, ...options.filters },
   pagination: { limit: options.limit ?? 5 },
   query: { text: options.query ?? 'search phrase' },
   scope: {
@@ -460,14 +467,586 @@ describe('ElasticsearchSearchBackend', () => {
     );
   });
 
+  it('searches files by name and rechecks hidden sources and restricted KB memberships in PG', async () => {
+    await db.insert(knowledgeBases).values([
+      {
+        id: 'file-kb-open',
+        name: 'Open file KB',
+        userId,
+        visibility: 'public',
+        workspaceId,
+      },
+      {
+        id: 'file-kb-restricted',
+        name: 'Restricted file KB',
+        userId: otherUserId,
+        visibility: 'public',
+        workspaceId,
+      },
+    ]);
+    await db.insert(files).values([
+      {
+        fileType: 'text/plain',
+        id: 'file-open',
+        name: 'Search phrase notes',
+        size: 10,
+        url: 'file://file-open',
+        userId,
+        workspaceId,
+      },
+      {
+        fileType: 'text/plain',
+        id: 'file-restricted',
+        name: 'Search phrase restricted',
+        size: 20,
+        url: 'file://file-restricted',
+        userId,
+        workspaceId,
+      },
+      {
+        fileType: 'text/plain',
+        id: 'file-hidden-source',
+        name: 'Search phrase acceptance',
+        size: 30,
+        source: FileSource.Acceptance,
+        url: 'file://file-hidden-source',
+        userId,
+        workspaceId,
+      },
+      {
+        fileType: 'custom/document',
+        id: 'file-page-shell',
+        name: 'Search phrase page shell',
+        size: 40,
+        url: 'file://file-page-shell',
+        userId,
+        workspaceId,
+      },
+      {
+        fileType: 'text/plain',
+        id: 'file-private-other',
+        name: 'Search phrase private',
+        size: 50,
+        url: 'file://file-private-other',
+        userId: otherUserId,
+        visibility: 'private',
+        workspaceId,
+      },
+    ]);
+    await db.insert(knowledgeBaseFiles).values([
+      { fileId: 'file-open', knowledgeBaseId: 'file-kb-open', userId, workspaceId },
+      {
+        fileId: 'file-restricted',
+        knowledgeBaseId: 'file-kb-restricted',
+        userId,
+        workspaceId,
+      },
+    ]);
+    await db.insert(documents).values({
+      content: 'Hydrated file description',
+      fileId: 'file-open',
+      fileType: 'text/plain',
+      filename: 'search-phrase-notes.txt',
+      source: 'file://search-phrase-notes.txt',
+      sourceType: 'file',
+      title: 'Search phrase notes',
+      totalCharCount: 25,
+      totalLineCount: 1,
+      userId,
+      workspaceId,
+    });
+    const client = createClient([
+      { _id: 'file-restricted', _score: 12 },
+      { _id: 'file-hidden-source', _score: 11 },
+      { _id: 'file-page-shell', _score: 10 },
+      { _id: 'file-private-other', _score: 9 },
+      { _id: 'file-deleted', _score: 8 },
+      { _id: 'file-open', _score: 7 },
+    ]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search(
+      request('files', {
+        filters: { excludeKnowledgeBaseIds: ['file-kb-restricted'] },
+      }),
+    );
+
+    expect(response.items).toEqual([
+      expect.objectContaining({
+        description: 'Hydrated file description',
+        id: 'file-open',
+        knowledgeBaseId: 'file-kb-open',
+        type: 'file',
+      }),
+    ]);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              must: [
+                {
+                  multi_match: {
+                    fields: ['name^4'],
+                    operator: 'and',
+                    query: 'search phrase',
+                    type: 'best_fields',
+                  },
+                },
+              ],
+              must_not: expect.arrayContaining([
+                { term: { file_type: 'custom/document' } },
+                { terms: { source: [FileSource.Acceptance] } },
+                { terms: { knowledge_base_ids: ['file-kb-restricted'] } },
+              ]),
+            }),
+          },
+        }),
+        index: 'lobehub-dev-files',
+      }),
+    );
+  });
+
+  it('keeps folder fields separate from page content and rechecks restricted document links', async () => {
+    await db.insert(knowledgeBases).values({
+      id: 'documents-kb-restricted',
+      name: 'Restricted documents KB',
+      userId: otherUserId,
+      visibility: 'public',
+      workspaceId,
+    });
+    await db.insert(documents).values([
+      {
+        description: 'Search phrase folder description',
+        fileType: DOCUMENT_FOLDER_TYPE,
+        filename: 'open-folder',
+        id: 'folder-open',
+        source: 'internal://folder/open',
+        sourceType: 'api',
+        title: 'Open search folder',
+        totalCharCount: 0,
+        totalLineCount: 0,
+        userId,
+        workspaceId,
+      },
+      {
+        description: 'Search phrase restricted folder',
+        fileType: DOCUMENT_FOLDER_TYPE,
+        filename: 'restricted-folder',
+        id: 'folder-restricted',
+        knowledgeBaseId: 'documents-kb-restricted',
+        source: 'internal://folder/restricted',
+        sourceType: 'api',
+        title: 'Restricted folder',
+        totalCharCount: 0,
+        totalLineCount: 0,
+        userId,
+        workspaceId,
+      },
+      {
+        content: 'Search phrase appears only in page content',
+        fileType: 'custom/document',
+        filename: 'content-page',
+        id: 'folder-page-candidate',
+        source: 'internal://document/content-page',
+        sourceType: 'api',
+        title: 'Unrelated page title',
+        totalCharCount: 42,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+    ]);
+    const client = createClient([
+      { _id: 'folder-restricted', _score: 10 },
+      { _id: 'folder-page-candidate', _score: 9 },
+      { _id: 'folder-open', _score: 8 },
+    ]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search(
+      request('documents', {
+        filters: {
+          documentKind: 'folder',
+          excludeKnowledgeBaseIds: ['documents-kb-restricted'],
+        },
+      }),
+    );
+
+    expect(response.items).toEqual([
+      expect.objectContaining({ id: 'folder-open', type: 'folder' }),
+    ]);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: expect.arrayContaining([{ term: { file_type: DOCUMENT_FOLDER_TYPE } }]),
+              must: [
+                {
+                  multi_match: {
+                    fields: ['title^4', 'slug^3', 'description^2'],
+                    operator: 'and',
+                    query: 'search phrase',
+                    type: 'best_fields',
+                  },
+                },
+              ],
+              must_not: expect.arrayContaining([
+                { terms: { knowledge_base_ids: ['documents-kb-restricted'] } },
+              ]),
+            }),
+          },
+        }),
+        index: 'lobehub-dev-documents',
+      }),
+    );
+  });
+
+  it('rechecks direct and file-backed restricted memberships while hydrating pages', async () => {
+    await db.insert(knowledgeBases).values([
+      {
+        id: 'page-kb-open',
+        name: 'Open page KB',
+        userId,
+        visibility: 'public',
+        workspaceId,
+      },
+      {
+        id: 'page-kb-restricted',
+        name: 'Restricted page KB',
+        userId: otherUserId,
+        visibility: 'public',
+        workspaceId,
+      },
+    ]);
+    await db.insert(files).values({
+      fileType: 'application/pdf',
+      id: 'page-restricted-file',
+      name: 'restricted.pdf',
+      size: 100,
+      url: 'file://page-restricted-file',
+      userId,
+      workspaceId,
+    });
+    await db.insert(knowledgeBaseFiles).values({
+      fileId: 'page-restricted-file',
+      knowledgeBaseId: 'page-kb-restricted',
+      userId,
+      workspaceId,
+    });
+    await db.insert(documents).values([
+      {
+        content: 'Search phrase open page',
+        fileType: 'custom/document',
+        filename: 'open-page',
+        id: 'page-open',
+        knowledgeBaseId: 'page-kb-open',
+        source: 'internal://document/open-page',
+        sourceType: 'api',
+        title: 'Open page',
+        totalCharCount: 23,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+      {
+        content: 'Search phrase direct restricted page',
+        fileType: 'custom/document',
+        filename: 'direct-restricted-page',
+        id: 'page-direct-restricted',
+        knowledgeBaseId: 'page-kb-restricted',
+        source: 'internal://document/direct-restricted',
+        sourceType: 'api',
+        title: 'Direct restricted page',
+        totalCharCount: 36,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+      {
+        content: 'Search phrase file restricted page',
+        fileId: 'page-restricted-file',
+        fileType: 'custom/document',
+        filename: 'file-restricted-page',
+        id: 'page-file-restricted',
+        source: 'file://page-restricted-file',
+        sourceType: 'file',
+        title: 'File restricted page',
+        totalCharCount: 34,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+    ]);
+    const client = createClient([
+      { _id: 'page-direct-restricted', _score: 12 },
+      { _id: 'page-file-restricted', _score: 11 },
+      { _id: 'page-open', _score: 10 },
+    ]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search(
+      request('documents', {
+        filters: {
+          documentKind: 'page',
+          excludeKnowledgeBaseIds: ['page-kb-restricted'],
+        },
+      }),
+    );
+
+    expect(response.items).toEqual([expect.objectContaining({ id: 'page-open', type: 'page' })]);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: expect.arrayContaining([{ term: { file_type: 'custom/document' } }]),
+              must: [
+                {
+                  multi_match: {
+                    fields: ['title^4', 'slug^3', 'content'],
+                    operator: 'and',
+                    query: 'search phrase',
+                    type: 'best_fields',
+                  },
+                },
+              ],
+              must_not: expect.arrayContaining([
+                { terms: { knowledge_base_ids: ['page-kb-restricted'] } },
+              ]),
+            }),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('hydrates inline and file-backed KB documents without truncating candidates by document size', async () => {
+    const largeContent = `search phrase ${'x'.repeat(1_000_000)}`;
+    await db.insert(knowledgeBases).values([
+      {
+        id: 'document-kb-target',
+        name: 'Target document KB',
+        userId,
+        visibility: 'public',
+        workspaceId,
+      },
+      {
+        id: 'document-kb-other',
+        name: 'Other document KB',
+        userId,
+        visibility: 'public',
+        workspaceId,
+      },
+    ]);
+    await db.insert(files).values({
+      fileType: 'application/pdf',
+      id: 'document-file-backed',
+      name: 'file-backed.pdf',
+      size: 1024,
+      url: 'file://document-file-backed',
+      userId,
+      workspaceId,
+    });
+    await db.insert(knowledgeBaseFiles).values({
+      fileId: 'document-file-backed',
+      knowledgeBaseId: 'document-kb-target',
+      userId,
+      workspaceId,
+    });
+    await db.insert(documents).values([
+      {
+        content: largeContent,
+        fileType: 'custom/document',
+        filename: 'inline-large',
+        id: 'document-inline-large',
+        knowledgeBaseId: 'document-kb-target',
+        source: 'internal://document/inline-large',
+        sourceType: 'api',
+        title: 'Large inline document',
+        totalCharCount: largeContent.length,
+        totalLineCount: 1,
+        userId,
+        visibility: 'private',
+        workspaceId,
+      },
+      {
+        content: 'Search phrase in parsed PDF',
+        fileId: 'document-file-backed',
+        fileType: 'application/pdf',
+        filename: 'file-backed.pdf',
+        id: 'document-file-backed-row',
+        source: 'file://document-file-backed',
+        sourceType: 'file',
+        title: 'File-backed document',
+        totalCharCount: 27,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+      {
+        content: 'Search phrase in another KB',
+        fileType: 'custom/document',
+        filename: 'other-kb',
+        id: 'document-other-kb',
+        knowledgeBaseId: 'document-kb-other',
+        source: 'internal://document/other-kb',
+        sourceType: 'api',
+        title: 'Other KB document',
+        totalCharCount: 27,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+      {
+        content: 'Search phrase folder',
+        fileType: DOCUMENT_FOLDER_TYPE,
+        filename: 'document-folder',
+        id: 'document-folder',
+        knowledgeBaseId: 'document-kb-target',
+        source: 'internal://folder/document-folder',
+        sourceType: 'api',
+        title: 'Document folder',
+        totalCharCount: 20,
+        totalLineCount: 1,
+        userId,
+        workspaceId,
+      },
+    ]);
+    const client = createClient([
+      { _id: 'document-other-kb', _score: 13 },
+      { _id: 'document-folder', _score: 12 },
+      { _id: 'document-inline-large', _score: 11 },
+      { _id: 'document-file-backed-row', _score: 10 },
+      { _id: 'document-deleted', _score: 9 },
+    ]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search(
+      request('documents', {
+        filters: {
+          documentKind: 'knowledgeBaseDocument',
+          knowledgeBaseIds: ['document-kb-target'],
+        },
+      }),
+    );
+
+    expect(response.items).toEqual([
+      expect.objectContaining({
+        documentId: 'document-inline-large',
+        knowledgeBaseId: 'document-kb-target',
+      }),
+      expect.objectContaining({
+        documentId: 'document-file-backed-row',
+        fileId: 'document-file-backed',
+        knowledgeBaseId: 'document-kb-target',
+      }),
+    ]);
+    expect(response.items[0]).toMatchObject({ snippet: expect.any(String) });
+    expect('snippet' in response.items[0]! && response.items[0].snippet.length).toBeLessThanOrEqual(
+      303,
+    );
+
+    const publicAgentResponse = await backend.search(
+      request('documents', {
+        filters: {
+          documentKind: 'knowledgeBaseDocument',
+          knowledgeBaseIds: ['document-kb-target'],
+        },
+        scope: { callerAgentVisibility: 'public' },
+      }),
+    );
+    expect(publicAgentResponse.items).toEqual([
+      expect.objectContaining({ documentId: 'document-file-backed-row' }),
+    ]);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: expect.arrayContaining([
+                { terms: { knowledge_base_ids: ['document-kb-target'] } },
+              ]),
+              must_not: expect.arrayContaining([{ term: { file_type: DOCUMENT_FOLDER_TYPE } }]),
+            }),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('searches knowledge bases and rechecks visibility and restricted IDs in PG', async () => {
+    await db.insert(knowledgeBases).values([
+      {
+        id: 'kb-public',
+        name: 'Public search phrase KB',
+        userId: otherUserId,
+        visibility: 'public',
+        workspaceId,
+      },
+      {
+        id: 'kb-private-own',
+        name: 'Own private search phrase KB',
+        userId,
+        visibility: 'private',
+        workspaceId,
+      },
+      {
+        id: 'kb-private-other',
+        name: 'Other private search phrase KB',
+        userId: otherUserId,
+        visibility: 'private',
+        workspaceId,
+      },
+      {
+        id: 'kb-restricted',
+        name: 'Restricted search phrase KB',
+        userId: otherUserId,
+        visibility: 'public',
+        workspaceId,
+      },
+    ]);
+    const client = createClient([
+      { _id: 'kb-private-other', _score: 12 },
+      { _id: 'kb-restricted', _score: 11 },
+      { _id: 'kb-public', _score: 10 },
+      { _id: 'kb-private-own', _score: 9 },
+    ]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search(
+      request('knowledgeBases', {
+        filters: { excludeKnowledgeBaseIds: ['kb-restricted'] },
+      }),
+    );
+
+    expect(response.items).toEqual([
+      expect.objectContaining({ id: 'kb-public', type: 'knowledgeBase' }),
+      expect.objectContaining({ id: 'kb-private-own', type: 'knowledgeBase' }),
+    ]);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              must_not: expect.arrayContaining([{ terms: { id: ['kb-restricted'] } }]),
+            }),
+          },
+        }),
+        index: 'lobehub-dev-knowledge-bases',
+      }),
+    );
+  });
+
   it('rejects entities that have not migrated to Elasticsearch yet', async () => {
     const backend = new ElasticsearchSearchBackend(db, {
       client: createClient([]),
       indexNamespace,
     });
 
-    await expect(backend.search(request('files'))).rejects.toThrow(
-      'Unsupported Elasticsearch search entity: files',
+    await expect(backend.search(request('userMemories'))).rejects.toThrow(
+      'Unsupported Elasticsearch search entity: userMemories',
     );
   });
 });
