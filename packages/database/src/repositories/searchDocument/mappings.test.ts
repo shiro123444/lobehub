@@ -22,7 +22,10 @@ describe('search index mappings', () => {
     const definition = SEARCH_INDEX_DEFINITIONS[entity];
 
     for (const field of definition.queryFields) {
-      expect(definition.mappings.properties[field].type).toBe('text');
+      expect(Object.entries(definition.mappings.properties)).toContainEqual([
+        field,
+        expect.objectContaining({ type: 'text' }),
+      ]);
     }
   });
 

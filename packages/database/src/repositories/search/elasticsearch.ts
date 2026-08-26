@@ -12,18 +12,12 @@ import type {
   MessageSearchResult,
   SearchBackend,
   SearchBackendCandidate,
+  SearchBackendEntity,
   SearchBackendRequest,
   SearchBackendResponse,
   SearchBackendScope,
   TopicSearchResult,
 } from './types';
-
-const SUPPORTED_ENTITIES = new Set<SearchBackendRequest['entity']>([
-  'agents',
-  'chatGroups',
-  'messages',
-  'topics',
-]);
 
 /**
  * Candidate over-fetch keeps authorized lower-ranked hits available when an index still contains
@@ -31,12 +25,19 @@ const SUPPORTED_ENTITIES = new Set<SearchBackendRequest['entity']>([
  */
 const CANDIDATE_MULTIPLIER = 4;
 
-const QUERY_FIELDS = {
+export const ELASTICSEARCH_CONVERSATION_QUERY_FIELDS = {
   agents: ['title^5', 'slug^4', 'tags^3', 'description^2', 'system_role'],
   chatGroups: ['title^4', 'description^2', 'content'],
   messages: ['content^2', 'summary'],
   topics: ['title', 'content', 'description'],
 } as const;
+
+export type ElasticsearchConversationEntity = keyof typeof ELASTICSEARCH_CONVERSATION_QUERY_FIELDS;
+
+export const isElasticsearchConversationEntity = (
+  entity: SearchBackendEntity,
+): entity is ElasticsearchConversationEntity =>
+  Object.hasOwn(ELASTICSEARCH_CONVERSATION_QUERY_FIELDS, entity);
 
 const messageTopicAgents = alias(agents, 'search_message_topic_agents');
 const messageTopicChatGroups = alias(chatGroups, 'search_message_topic_chat_groups');
@@ -75,6 +76,9 @@ interface HydratedScore {
   score: number;
 }
 
+type ElasticsearchConversationSearchResult =
+  AgentSearchResult | ChatGroupSearchResult | MessageSearchResult | TopicSearchResult;
+
 const normalizeQuery = (query: string) =>
   query.trim().replaceAll('-', ' ').split(/\s+/).filter(Boolean).join(' ');
 
@@ -110,15 +114,18 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     this.indexNamespace = namespace;
   }
 
-  async search(request: SearchBackendRequest): Promise<SearchBackendResponse> {
-    if (!SUPPORTED_ENTITIES.has(request.entity)) {
+  async search(
+    request: SearchBackendRequest,
+  ): Promise<SearchBackendResponse<ElasticsearchConversationSearchResult>> {
+    const entity = request.entity;
+    if (!isElasticsearchConversationEntity(entity)) {
       throw new Error(`Unsupported Elasticsearch search entity: ${request.entity}`);
     }
 
     const query = normalizeQuery(request.query.text);
     if (!query) return { candidates: [], items: [] };
 
-    const hits = await this.searchCandidates(request, query);
+    const hits = await this.searchCandidates(request, entity, query);
     const candidates = hits.map(({ id, score }) => ({ id, score }));
 
     if (request.entity === 'agents') {
@@ -157,7 +164,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
   }
 
   private buildScopeClauses(
-    entity: keyof typeof QUERY_FIELDS,
+    entity: ElasticsearchConversationEntity,
     scope: SearchBackendScope,
   ): { filter: Array<Record<string, unknown>>; mustNot: Array<Record<string, unknown>> } {
     if (!scope.workspaceId) {
@@ -186,9 +193,9 @@ export class ElasticsearchSearchBackend implements SearchBackend {
 
   private async searchCandidates(
     request: SearchBackendRequest,
+    entity: ElasticsearchConversationEntity,
     query: string,
   ): Promise<CandidateHit[]> {
-    const entity = request.entity as keyof typeof QUERY_FIELDS;
     const { filter, mustNot } = this.buildScopeClauses(entity, request.scope);
     if (request.filters.agentId && (entity === 'topics' || entity === 'messages')) {
       filter.push({ term: { agent_id: request.filters.agentId } });
@@ -204,7 +211,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
             must: [
               {
                 multi_match: {
-                  fields: QUERY_FIELDS[entity],
+                  fields: ELASTICSEARCH_CONVERSATION_QUERY_FIELDS[entity],
                   operator: 'and',
                   query,
                   type: 'best_fields',
