@@ -468,6 +468,7 @@ describe('ElasticsearchSearchBackend', () => {
   });
 
   it('searches files by name and rechecks hidden sources and restricted KB memberships in PG', async () => {
+    const longFileDescription = `Hydrated file description ${'x'.repeat(220)}`;
     await db.insert(knowledgeBases).values([
       {
         id: 'file-kb-open',
@@ -543,14 +544,14 @@ describe('ElasticsearchSearchBackend', () => {
       },
     ]);
     await db.insert(documents).values({
-      content: 'Hydrated file description',
+      content: longFileDescription,
       fileId: 'file-open',
       fileType: 'text/plain',
       filename: 'search-phrase-notes.txt',
       source: 'file://search-phrase-notes.txt',
       sourceType: 'file',
       title: 'Search phrase notes',
-      totalCharCount: 25,
+      totalCharCount: longFileDescription.length,
       totalLineCount: 1,
       userId,
       workspaceId,
@@ -573,7 +574,7 @@ describe('ElasticsearchSearchBackend', () => {
 
     expect(response.items).toEqual([
       expect.objectContaining({
-        description: 'Hydrated file description',
+        description: `${longFileDescription.slice(0, 200)}...`,
         id: 'file-open',
         knowledgeBaseId: 'file-kb-open',
         type: 'file',
@@ -587,7 +588,7 @@ describe('ElasticsearchSearchBackend', () => {
               must: [
                 {
                   multi_match: {
-                    fields: ['name^4'],
+                    fields: ['name'],
                     operator: 'and',
                     query: 'search phrase',
                     type: 'best_fields',
@@ -943,10 +944,9 @@ describe('ElasticsearchSearchBackend', () => {
         knowledgeBaseId: 'document-kb-target',
       }),
     ]);
-    expect(response.items[0]).toMatchObject({ snippet: expect.any(String) });
-    expect('snippet' in response.items[0]! && response.items[0].snippet.length).toBeLessThanOrEqual(
-      303,
-    );
+    expect(response.items[0]).toMatchObject({
+      snippet: `${largeContent.slice(0, 300)}...`,
+    });
 
     const publicAgentResponse = await backend.search(
       request('documents', {

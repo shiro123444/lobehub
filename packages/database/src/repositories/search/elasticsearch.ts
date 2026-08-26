@@ -1,5 +1,16 @@
 import { LIBRARY_HIDDEN_FILE_SOURCES } from '@lobechat/types';
-import { and, eq, inArray, isNotNull, isNull, ne, notInArray, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import {
@@ -30,6 +41,7 @@ import type {
   SearchBackend,
   SearchBackendCandidate,
   SearchBackendEntity,
+  SearchBackendFilters,
   SearchBackendRequest,
   SearchBackendResponse,
   SearchBackendScope,
@@ -57,7 +69,7 @@ export const isElasticsearchConversationEntity = (
   Object.hasOwn(ELASTICSEARCH_CONVERSATION_QUERY_FIELDS, entity);
 
 export const ELASTICSEARCH_RESOURCE_QUERY_FIELDS = {
-  files: ['name^4'],
+  files: ['name'],
   knowledgeBases: ['name^4', 'description'],
 } as const;
 
@@ -131,14 +143,30 @@ type ElasticsearchSearchResult =
   | PageSearchResult
   | TopicSearchResult;
 
+type ElasticsearchDocumentKind = NonNullable<SearchBackendFilters['documentKind']>;
+type ElasticsearchCandidateTarget =
+  | { documentKind: ElasticsearchDocumentKind; entity: 'documents' }
+  | { entity: Exclude<ElasticsearchSearchEntity, 'documents'> };
+
+const DEFAULT_SNIPPET_MAX_LENGTH = 200;
+const FILE_DESCRIPTION_MAX_LENGTH = 200;
+const KNOWLEDGE_BASE_DOCUMENT_SNIPPET_MAX_LENGTH = 300;
+
 const normalizeQuery = (query: string) =>
   query.trim().replaceAll('-', ' ').split(/\s+/).filter(Boolean).join(' ');
 
-const truncate = (content: string | null | undefined, maxLength: number = 200) => {
+const truncate = (
+  content: string | null | undefined,
+  maxLength: number = DEFAULT_SNIPPET_MAX_LENGTH,
+) => {
   if (!content) return null;
   if (content.length <= maxLength) return content;
   return `${content.slice(0, maxLength)}...`;
 };
+
+/** Select one extra character so truncation preserves exact ellipsis behavior without loading full content. */
+const documentContentPreview = (maxLength: number) =>
+  sql<string | null>`left(${documents.content}, ${maxLength + 1})`;
 
 const visibleParent = (
   foreignKey: Parameters<typeof isNull>[0],
@@ -176,15 +204,25 @@ export class ElasticsearchSearchBackend implements SearchBackend {
 
     const query = normalizeQuery(request.query.text);
     if (!query) return { candidates: [], items: [] };
+    let target: ElasticsearchCandidateTarget;
+    if (entity === 'documents') {
+      const documentKind = request.filters.documentKind;
+      if (!documentKind) {
+        throw new Error('Elasticsearch document search requires a supported document kind');
+      }
+      target = { documentKind, entity };
+    } else {
+      target = { entity };
+    }
     if (
-      entity === 'documents' &&
-      request.filters.documentKind === 'knowledgeBaseDocument' &&
+      target.entity === 'documents' &&
+      target.documentKind === 'knowledgeBaseDocument' &&
       !request.filters.knowledgeBaseIds?.length
     ) {
       return { candidates: [], items: [] };
     }
 
-    const hits = await this.searchCandidates(request, entity, query);
+    const hits = await this.searchCandidates(request, target, query);
     const candidates = hits.map(({ id, score }) => ({ id, score }));
 
     if (request.entity === 'agents') {
@@ -244,7 +282,10 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         ),
       };
     }
-    if (request.filters.documentKind === 'folder') {
+    if (target.entity !== 'documents') {
+      throw new Error(`Unsupported Elasticsearch search entity: ${target.entity}`);
+    }
+    if (target.documentKind === 'folder') {
       return {
         candidates,
         items: await this.hydrateFolders(
@@ -255,7 +296,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         ),
       };
     }
-    if (request.filters.documentKind === 'page') {
+    if (target.documentKind === 'page') {
       return {
         candidates,
         items: await this.hydratePages(
@@ -266,7 +307,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         ),
       };
     }
-    if (request.filters.documentKind === 'knowledgeBaseDocument') {
+    if (target.documentKind === 'knowledgeBaseDocument') {
       return {
         candidates,
         items: await this.hydrateKnowledgeBaseDocuments(
@@ -278,7 +319,8 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       };
     }
 
-    throw new Error('Elasticsearch document search requires a supported document kind');
+    target.documentKind satisfies never;
+    throw new Error(`Unsupported Elasticsearch document kind: ${String(target.documentKind)}`);
   }
 
   private buildScopeClauses(
@@ -317,9 +359,10 @@ export class ElasticsearchSearchBackend implements SearchBackend {
 
   private async searchCandidates(
     request: SearchBackendRequest,
-    entity: ElasticsearchSearchEntity,
+    target: ElasticsearchCandidateTarget,
     query: string,
   ): Promise<CandidateHit[]> {
+    const { entity } = target;
     const { filter, mustNot } = this.buildScopeClauses(entity, request.scope);
     if (request.filters.agentId && (entity === 'topics' || entity === 'messages')) {
       filter.push({ term: { agent_id: request.filters.agentId } });
@@ -337,18 +380,18 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     if (entity === 'knowledgeBases' && request.filters.excludeKnowledgeBaseIds?.length) {
       mustNot.push({ terms: { id: request.filters.excludeKnowledgeBaseIds } });
     }
-    if (entity === 'documents') {
-      const { documentKind } = request.filters;
-      if (!documentKind) {
-        throw new Error('Elasticsearch document search requires a supported document kind');
-      }
+    if (target.entity === 'documents') {
+      const { documentKind } = target;
       if (documentKind === 'folder') {
         filter.push({ term: { file_type: DOCUMENT_FOLDER_TYPE } });
       } else if (documentKind === 'page') {
         filter.push({ term: { file_type: 'custom/document' } });
-      } else {
+      } else if (documentKind === 'knowledgeBaseDocument') {
         filter.push({ terms: { knowledge_base_ids: request.filters.knowledgeBaseIds ?? [] } });
         mustNot.push({ term: { file_type: DOCUMENT_FOLDER_TYPE } });
+      } else {
+        documentKind satisfies never;
+        throw new Error(`Unsupported Elasticsearch document kind: ${String(documentKind)}`);
       }
       if (
         documentKind !== 'knowledgeBaseDocument' &&
@@ -359,11 +402,11 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     }
 
     const fields =
-      entity === 'documents'
-        ? ELASTICSEARCH_DOCUMENT_QUERY_FIELDS[request.filters.documentKind!]
-        : isElasticsearchConversationEntity(entity)
-          ? ELASTICSEARCH_CONVERSATION_QUERY_FIELDS[entity]
-          : ELASTICSEARCH_RESOURCE_QUERY_FIELDS[entity];
+      target.entity === 'documents'
+        ? ELASTICSEARCH_DOCUMENT_QUERY_FIELDS[target.documentKind]
+        : isElasticsearchConversationEntity(target.entity)
+          ? ELASTICSEARCH_CONVERSATION_QUERY_FIELDS[target.entity]
+          : ELASTICSEARCH_RESOURCE_QUERY_FIELDS[target.entity];
 
     const response = await this.client.search({
       body: {
@@ -688,6 +731,10 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       }));
   }
 
+  /**
+   * Omitting scope is intentionally conservative for exclusion checks: any restricted membership
+   * hides the result. Authorization checks must pass scope so unrelated memberships cannot grant access.
+   */
   private async getKnowledgeBaseIdsByFile(
     fileIds: string[],
     scope?: SearchBackendScope,
@@ -762,7 +809,11 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       selectedFileIds.length === 0
         ? []
         : await this.db
-            .select({ content: documents.content, fileId: documents.fileId, id: documents.id })
+            .select({
+              content: documentContentPreview(FILE_DESCRIPTION_MAX_LENGTH),
+              fileId: documents.fileId,
+              id: documents.id,
+            })
             .from(documents)
             .where(
               and(
@@ -777,7 +828,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
 
     return scoredRows.map((row) => ({
       createdAt: row.createdAt,
-      description: truncate(contentByFile.get(row.id)),
+      description: truncate(contentByFile.get(row.id), FILE_DESCRIPTION_MAX_LENGTH),
       fileType: row.fileType,
       id: row.id,
       knowledgeBaseId: knowledgeBaseIdsByFile.get(row.id)?.[0] ?? null,
@@ -953,7 +1004,10 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       selectedDocumentIds.length === 0
         ? []
         : await this.db
-            .select({ content: documents.content, id: documents.id })
+            .select({
+              content: documentContentPreview(KNOWLEDGE_BASE_DOCUMENT_SNIPPET_MAX_LENGTH),
+              id: documents.id,
+            })
             .from(documents)
             .where(
               and(
@@ -968,7 +1022,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       fileId: row.fileId ?? undefined,
       knowledgeBaseId: row.matchingKnowledgeBaseId,
       relevance: row.relevance,
-      snippet: truncate(contentById.get(row.id), 300) ?? '',
+      snippet: truncate(contentById.get(row.id), KNOWLEDGE_BASE_DOCUMENT_SNIPPET_MAX_LENGTH) ?? '',
       title: row.title || row.filename || 'Untitled',
       updatedAt: row.updatedAt,
     }));
