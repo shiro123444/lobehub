@@ -42,20 +42,7 @@ vi.mock('@lobehub/ui', () => ({
 }));
 
 vi.mock('@lobehub/ui/base-ui', async (importOriginal) => ({
-  ...((await importOriginal()) as Record<string, unknown>),
-  Button: ({
-    children,
-    disabled,
-    onClick,
-  }: {
-    children?: ReactNode;
-    disabled?: boolean;
-    onClick?: () => void;
-  }) => (
-    <button disabled={disabled} type="button" onClick={onClick}>
-      {children}
-    </button>
-  ),
+  ...(await importOriginal<object>()),
   Select: ({
     onChange,
     options,
@@ -73,7 +60,6 @@ vi.mock('@lobehub/ui/base-ui', async (importOriginal) => ({
       ))}
     </select>
   ),
-  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock('antd', () => ({
