@@ -27,6 +27,8 @@ const AgentHeader = memo(() => {
   const meta = useAgentStore(agentSelectors.getAgentMetaById(agentId), isEqual);
   const config = useAgentStore(agentSelectors.getAgentConfigById(agentId), isEqual);
   const slug = useAgentStore(agentSelectors.getAgentSlugById(agentId));
+  /** Keeps the render-only fallback avatar out of generation references. */
+  const storedAvatar = useAgentStore(agentSelectors.getAgentStoredAvatarById(agentId));
   const updateMetaById = useAgentStore((s) => s.updateAgentMetaById);
   const { autoName, naming } = useAutoName(agentId);
   // Without edit rights there is nothing to prompt for, so a nameless agent
@@ -55,6 +57,7 @@ const AgentHeader = memo(() => {
         description={meta.description}
         locale={locale}
         name={meta.name}
+        storedAvatar={storedAvatar}
         systemRole={config?.systemRole}
         title={meta.title}
         onAvatarChange={(avatar) => {
