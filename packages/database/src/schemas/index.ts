@@ -32,6 +32,7 @@ export * from './nextauth';
 export * from './notification';
 export * from './oidc';
 export * from './project';
+export * from './projectWork';
 export * from './pushToken';
 export * from './rag';
 export * from './ragEvals';
