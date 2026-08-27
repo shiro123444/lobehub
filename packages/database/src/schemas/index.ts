@@ -44,6 +44,7 @@ export * from './systemBotProvider';
 export * from './task';
 export * from './topic';
 export * from './topicComment';
+export * from './trash';
 export * from './user';
 export * from './userMemories';
 export * from './verify';

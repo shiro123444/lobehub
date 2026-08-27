@@ -234,6 +234,8 @@ export class SessionActionImpl {
               config: null,
               content: null,
               createdAt: session.createdAt,
+              deletedAt: null,
+              isDeleted: false,
               description: session.meta?.description || '',
               editorData: null,
 

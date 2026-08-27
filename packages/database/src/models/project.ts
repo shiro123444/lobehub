@@ -410,6 +410,7 @@ export class ProjectModel {
           buildWorkspaceWhere(
             { userId: this.userId, workspaceId: this.workspaceId },
             {
+              isDeleted: tasks.isDeleted,
               userId: tasks.createdByUserId,
               visibility: tasks.visibility,
               workspaceId: tasks.workspaceId,
@@ -450,6 +451,7 @@ export class ProjectModel {
           buildWorkspaceWhere(
             { userId: this.userId, workspaceId: this.workspaceId },
             {
+              isDeleted: tasks.isDeleted,
               userId: tasks.createdByUserId,
               visibility: tasks.visibility,
               workspaceId: tasks.workspaceId,
@@ -482,6 +484,7 @@ export class ProjectModel {
     const taskScope = buildWorkspaceWhere(
       { userId: this.userId, workspaceId: this.workspaceId },
       {
+        isDeleted: tasks.isDeleted,
         userId: tasks.createdByUserId,
         visibility: tasks.visibility,
         workspaceId: tasks.workspaceId,

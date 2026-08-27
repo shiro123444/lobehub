@@ -1,7 +1,7 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 import { idGenerator } from '../utils/idGenerator';
-import { timestamps } from './_helpers';
+import { softDeleteColumns, timestamps } from './_helpers';
 import { agents } from './agent';
 import { chatGroups } from './chatGroup';
 import { users } from './user';
@@ -56,6 +56,8 @@ export const agentCronJobs = pgTable(
     lastExecutedAt: timestamp('last_executed_at'),
     totalExecutions: integer('total_executions').default(0),
 
+    /** Recycle bin — see `schemas/trash.ts`. */
+    ...softDeleteColumns(),
     ...timestamps,
   },
   (t) => [
