@@ -24,6 +24,7 @@ import {
   messages,
   sessions,
   topics,
+  userMemories,
 } from '../../schemas';
 import type { LobeChatDatabase } from '../../type';
 import { normalizeInboxAgentMeta, normalizeInboxAgentTitle } from '../../utils/inboxAgent';
@@ -36,6 +37,7 @@ import type {
   FolderSearchResult,
   KnowledgeBaseDocumentHit,
   KnowledgeBaseSearchResult,
+  MemorySearchResult,
   MessageSearchResult,
   PageSearchResult,
   SearchBackend,
@@ -87,13 +89,53 @@ export const isElasticsearchResourceEntity = (
 ): entity is ElasticsearchResourceEntity =>
   entity === 'documents' || Object.hasOwn(ELASTICSEARCH_RESOURCE_QUERY_FIELDS, entity);
 
+export const ELASTICSEARCH_MEMORY_QUERY_FIELDS = {
+  memoryActivities: [
+    'parent_title',
+    'parent_summary',
+    'parent_details',
+    'narrative',
+    'notes',
+    'feedback',
+  ],
+  memoryContexts: ['parent_text', 'title', 'description', 'current_status'],
+  memoryExperiences: [
+    'parent_title',
+    'parent_summary',
+    'parent_details',
+    'situation',
+    'reasoning',
+    'possible_outcome',
+    'action',
+    'key_learning',
+  ],
+  memoryIdentities: ['parent_title', 'parent_summary', 'parent_details', 'description', 'role'],
+  memoryPreferences: [
+    'parent_title',
+    'parent_summary',
+    'parent_details',
+    'conclusion_directives',
+    'suggestions',
+  ],
+  personaDocuments: ['tagline', 'persona'],
+  userMemories: ['title^4', 'summary^2', 'details'],
+} as const;
+
+export type ElasticsearchMemoryEntity = keyof typeof ELASTICSEARCH_MEMORY_QUERY_FIELDS;
+
+export const isElasticsearchMemoryEntity = (
+  entity: SearchBackendEntity,
+): entity is ElasticsearchMemoryEntity => Object.hasOwn(ELASTICSEARCH_MEMORY_QUERY_FIELDS, entity);
+
 export type ElasticsearchSearchEntity =
-  ElasticsearchConversationEntity | ElasticsearchResourceEntity;
+  ElasticsearchConversationEntity | ElasticsearchMemoryEntity | ElasticsearchResourceEntity;
 
 export const isElasticsearchSearchEntity = (
   entity: SearchBackendEntity,
 ): entity is ElasticsearchSearchEntity =>
-  isElasticsearchConversationEntity(entity) || isElasticsearchResourceEntity(entity);
+  isElasticsearchConversationEntity(entity) ||
+  isElasticsearchMemoryEntity(entity) ||
+  isElasticsearchResourceEntity(entity);
 
 const messageTopicAgents = alias(agents, 'search_message_topic_agents');
 const messageTopicChatGroups = alias(chatGroups, 'search_message_topic_chat_groups');
@@ -109,7 +151,9 @@ export interface ElasticsearchSearchResponse {
     hits: Array<{
       _id: string;
       _score: number | null;
+      sort?: unknown[];
     }>;
+    total?: number | { value: number };
   };
 }
 
@@ -127,6 +171,11 @@ interface CandidateHit extends SearchBackendCandidate {
   rank: number;
 }
 
+interface CandidateSearchResult {
+  hits: CandidateHit[];
+  total: number;
+}
+
 interface HydratedScore {
   relevance: number;
   score: number;
@@ -139,6 +188,7 @@ type ElasticsearchSearchResult =
   | FolderSearchResult
   | KnowledgeBaseDocumentHit
   | KnowledgeBaseSearchResult
+  | MemorySearchResult
   | MessageSearchResult
   | PageSearchResult
   | TopicSearchResult;
@@ -151,6 +201,7 @@ type ElasticsearchCandidateTarget =
 const DEFAULT_SNIPPET_MAX_LENGTH = 200;
 const FILE_DESCRIPTION_MAX_LENGTH = 200;
 const KNOWLEDGE_BASE_DOCUMENT_SNIPPET_MAX_LENGTH = 300;
+const UNBOUNDED_CANDIDATE_PAGE_SIZE = 1000;
 
 const normalizeQuery = (query: string) =>
   query.trim().replaceAll('-', ' ').split(/\s+/).filter(Boolean).join(' ');
@@ -173,10 +224,7 @@ const visibleParent = (
   id: Parameters<typeof isNotNull>[0],
 ) => or(isNull(foreignKey), isNotNull(id)) as SQL;
 
-/**
- * Elasticsearch candidate provider for the product-search entities migrated in LOBE-13461/13462.
- * Every hit is reloaded through PostgreSQL with current scope and parent visibility checks.
- */
+/** Elasticsearch candidate provider. Product hits are always reloaded through current PostgreSQL scope. */
 export class ElasticsearchSearchBackend implements SearchBackend {
   readonly key = 'elasticsearch';
 
@@ -203,7 +251,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     }
 
     const query = normalizeQuery(request.query.text);
-    if (!query) return { candidates: [], items: [] };
+    if (!query) return { candidates: [], items: [], total: 0 };
     let target: ElasticsearchCandidateTarget;
     if (entity === 'documents') {
       const documentKind = request.filters.documentKind;
@@ -222,42 +270,51 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       return { candidates: [], items: [] };
     }
 
-    const hits = await this.searchCandidates(request, target, query);
+    const candidateResult = await this.searchCandidates(request, target, query);
+    const { hits } = candidateResult;
     const candidates = hits.map(({ id, score }) => ({ id, score }));
+
+    if (request.mode === 'candidates') {
+      return { candidates, items: [], total: candidateResult.total };
+    }
+
+    const limit = request.pagination.limit;
+    if (!limit) throw new Error('Elasticsearch product search requires a positive limit');
+
+    if (entity === 'userMemories') {
+      return {
+        candidates,
+        items: await this.hydrateUserMemories(hits, request.scope, limit),
+        total: candidateResult.total,
+      };
+    }
+    if (isElasticsearchMemoryEntity(entity)) {
+      throw new Error(`Memory-layer entity only supports candidate search: ${entity}`);
+    }
 
     if (request.entity === 'agents') {
       return {
         candidates,
-        items: await this.hydrateAgents(hits, request.scope, request.pagination.limit),
+        items: await this.hydrateAgents(hits, request.scope, limit),
       };
     }
     if (request.entity === 'chatGroups') {
       return {
         candidates,
-        items: await this.hydrateChatGroups(hits, request.scope, request.pagination.limit),
+        items: await this.hydrateChatGroups(hits, request.scope, limit),
       };
     }
     if (entity === 'topics') {
       return {
         candidates,
-        items: await this.hydrateTopics(
-          hits,
-          request.scope,
-          request.pagination.limit,
-          request.filters.agentId,
-        ),
+        items: await this.hydrateTopics(hits, request.scope, limit, request.filters.agentId),
       };
     }
 
     if (entity === 'messages') {
       return {
         candidates,
-        items: await this.hydrateMessages(
-          hits,
-          request.scope,
-          request.pagination.limit,
-          request.filters.agentId,
-        ),
+        items: await this.hydrateMessages(hits, request.scope, limit, request.filters.agentId),
       };
     }
     if (entity === 'files') {
@@ -266,7 +323,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         items: await this.hydrateFiles(
           hits,
           request.scope,
-          request.pagination.limit,
+          limit,
           request.filters.excludeKnowledgeBaseIds,
         ),
       };
@@ -277,7 +334,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         items: await this.hydrateKnowledgeBases(
           hits,
           request.scope,
-          request.pagination.limit,
+          limit,
           request.filters.excludeKnowledgeBaseIds,
         ),
       };
@@ -291,7 +348,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         items: await this.hydrateFolders(
           hits,
           request.scope,
-          request.pagination.limit,
+          limit,
           request.filters.excludeKnowledgeBaseIds,
         ),
       };
@@ -302,7 +359,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         items: await this.hydratePages(
           hits,
           request.scope,
-          request.pagination.limit,
+          limit,
           request.filters.excludeKnowledgeBaseIds,
         ),
       };
@@ -313,7 +370,7 @@ export class ElasticsearchSearchBackend implements SearchBackend {
         items: await this.hydrateKnowledgeBaseDocuments(
           hits,
           request.scope,
-          request.pagination.limit,
+          limit,
           request.filters.knowledgeBaseIds ?? [],
         ),
       };
@@ -327,6 +384,10 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     entity: ElasticsearchSearchEntity,
     scope: SearchBackendScope,
   ): { filter: Array<Record<string, unknown>>; mustNot: Array<Record<string, unknown>> } {
+    if (isElasticsearchMemoryEntity(entity)) {
+      return { filter: [{ term: { user_id: scope.userId } }], mustNot: [] };
+    }
+
     if (!scope.workspaceId) {
       return {
         filter: [{ term: { user_id: scope.userId } }],
@@ -344,11 +405,23 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     ) {
       filter.push(
         scope.callerAgentVisibility === 'public'
-          ? { term: { visibility: 'public' } }
+          ? {
+              bool: {
+                minimum_should_match: 1,
+                should: [
+                  { bool: { must_not: [{ exists: { field: 'visibility' } }] } },
+                  { term: { visibility: 'public' } },
+                ],
+              },
+            }
           : {
               bool: {
                 minimum_should_match: 1,
-                should: [{ term: { visibility: 'public' } }, { term: { user_id: scope.userId } }],
+                should: [
+                  { bool: { must_not: [{ exists: { field: 'visibility' } }] } },
+                  { term: { visibility: 'public' } },
+                  { term: { user_id: scope.userId } },
+                ],
               },
             },
       );
@@ -361,13 +434,18 @@ export class ElasticsearchSearchBackend implements SearchBackend {
     request: SearchBackendRequest,
     target: ElasticsearchCandidateTarget,
     query: string,
-  ): Promise<CandidateHit[]> {
+  ): Promise<CandidateSearchResult> {
     const { entity } = target;
     const { filter, mustNot } = this.buildScopeClauses(entity, request.scope);
     if (request.filters.agentId && (entity === 'topics' || entity === 'messages')) {
       filter.push({ term: { agent_id: request.filters.agentId } });
     }
-    if (entity === 'messages') mustNot.push({ term: { role: 'tool' } });
+    if (entity === 'messages' && request.mode !== 'candidates') {
+      mustNot.push({ term: { role: 'tool' } });
+    }
+    if (request.filters.excludeVirtual && entity === 'agents') {
+      mustNot.push({ term: { virtual: true } });
+    }
     if (entity === 'files') {
       mustNot.push(
         { term: { file_type: 'custom/document' } },
@@ -401,44 +479,163 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       }
     }
 
+    this.appendMemoryFilters(entity, request.filters, filter);
+    this.appendTopicScopeFilters(entity, request.filters, filter);
+
     const fields =
-      target.entity === 'documents'
+      request.query.fields ??
+      (target.entity === 'documents'
         ? ELASTICSEARCH_DOCUMENT_QUERY_FIELDS[target.documentKind]
         : isElasticsearchConversationEntity(target.entity)
           ? ELASTICSEARCH_CONVERSATION_QUERY_FIELDS[target.entity]
-          : ELASTICSEARCH_RESOURCE_QUERY_FIELDS[target.entity];
-
-    const response = await this.client.search({
-      body: {
-        _source: false,
-        query: {
-          bool: {
-            filter,
-            must: [
-              {
-                multi_match: {
-                  fields,
-                  operator: 'and',
-                  query,
-                  type: 'best_fields',
-                },
-              },
-            ],
-            must_not: mustNot,
-          },
-        },
-        size: request.pagination.limit * CANDIDATE_MULTIPLIER,
-        sort: [{ _score: 'desc' }, { id: 'asc' }],
-      },
-      index: getSearchIndexAlias(this.indexNamespace, entity),
-    });
-
+          : isElasticsearchMemoryEntity(target.entity)
+            ? ELASTICSEARCH_MEMORY_QUERY_FIELDS[target.entity]
+            : ELASTICSEARCH_RESOURCE_QUERY_FIELDS[target.entity]);
+    const requestedLimit = request.pagination.limit;
+    const size = requestedLimit
+      ? requestedLimit * CANDIDATE_MULTIPLIER
+      : UNBOUNDED_CANDIDATE_PAGE_SIZE;
+    const trackTotalHits = request.mode === 'candidates';
     const seen = new Set<string>();
-    return response.hits.hits.flatMap((hit, rank) => {
-      if (!hit._id || seen.has(hit._id)) return [];
-      seen.add(hit._id);
-      return [{ id: hit._id, rank, score: hit._score }];
-    });
+    const hits: CandidateHit[] = [];
+    let searchAfter: unknown[] | undefined;
+    let shouldContinue = true;
+    let total = 0;
+
+    while (shouldContinue) {
+      const response = await this.client.search({
+        body: {
+          _source: false,
+          query: {
+            bool: {
+              filter,
+              must: [
+                {
+                  multi_match: {
+                    fields,
+                    operator: 'and',
+                    query,
+                    type: 'best_fields',
+                  },
+                },
+              ],
+              must_not: mustNot,
+            },
+          },
+          ...(searchAfter ? { search_after: searchAfter } : {}),
+          size,
+          sort: [{ _score: 'desc' }, { id: 'asc' }],
+          ...(trackTotalHits ? { track_total_hits: true } : {}),
+        },
+        index: getSearchIndexAlias(this.indexNamespace, entity),
+      });
+      const responseTotal = response.hits.total;
+      total =
+        typeof responseTotal === 'number'
+          ? responseTotal
+          : (responseTotal?.value ?? Math.max(total, hits.length + response.hits.hits.length));
+
+      for (const hit of response.hits.hits) {
+        if (!hit._id || seen.has(hit._id)) continue;
+        seen.add(hit._id);
+        hits.push({ id: hit._id, rank: hits.length, score: hit._score });
+      }
+
+      if (requestedLimit || response.hits.hits.length < size) {
+        shouldContinue = false;
+      } else {
+        searchAfter = response.hits.hits.at(-1)?.sort;
+        if (!searchAfter) {
+          throw new Error('Elasticsearch unbounded candidate search requires hit sort values');
+        }
+      }
+    }
+
+    return { hits, total: Math.max(total, hits.length) };
+  }
+
+  private appendMemoryFilters(
+    entity: ElasticsearchSearchEntity,
+    filters: SearchBackendFilters,
+    clauses: Array<Record<string, unknown>>,
+  ) {
+    if (!isElasticsearchMemoryEntity(entity)) return;
+
+    if (filters.memoryCategories?.length) {
+      clauses.push({
+        terms: {
+          [entity === 'userMemories' ? 'memory_category' : 'parent_memory_categories']:
+            filters.memoryCategories,
+        },
+      });
+    }
+    if (filters.memoryTypes?.length) {
+      clauses.push({ terms: { type: filters.memoryTypes } });
+    }
+    if (filters.memoryRelationships?.length) {
+      clauses.push({ terms: { relationship: filters.memoryRelationships } });
+    }
+    if (filters.memoryStatus?.length) {
+      clauses.push({
+        terms: {
+          [entity === 'memoryContexts' ? 'current_status.raw' : 'status']: filters.memoryStatus,
+        },
+      });
+    }
+    const tagClauses = (filters.memoryTags ?? []).map((tag) =>
+      entity === 'userMemories'
+        ? { term: { tags: tag } }
+        : {
+            bool: {
+              minimum_should_match: 1,
+              should: [{ term: { tags: tag } }, { term: { parent_tags: tag } }],
+            },
+          },
+    );
+    if (tagClauses.length > 0) {
+      if (filters.memoryTagMatch === 'any') {
+        clauses.push({ bool: { minimum_should_match: 1, should: tagClauses } });
+      } else {
+        clauses.push(...tagClauses);
+      }
+    }
+    if (filters.memoryTimeRange) {
+      const { end, field = 'capturedAt', start } = filters.memoryTimeRange;
+      const dateRange = {
+        ...(start ? { gte: start.toISOString() } : {}),
+        ...(end ? { lte: end.toISOString() } : {}),
+      };
+      if (Object.keys(dateRange).length > 0) {
+        const dateField = field.replaceAll(/[A-Z]/g, (character) => `_${character.toLowerCase()}`);
+        clauses.push({ range: { [dateField]: dateRange } });
+      }
+    }
+  }
+
+  private appendTopicScopeFilters(
+    entity: ElasticsearchSearchEntity,
+    filters: SearchBackendFilters,
+    clauses: Array<Record<string, unknown>>,
+  ) {
+    if (entity !== 'topics' && entity !== 'messages') return;
+
+    const scope = filters.topicScope;
+    if (!scope) return;
+    if (scope.groupId) {
+      clauses.push({ term: { group_id: scope.groupId } });
+    } else if (scope.agentId) {
+      clauses.push({ term: { agent_id: scope.agentId } });
+    } else if (scope.containerId) {
+      clauses.push({
+        bool: {
+          minimum_should_match: 1,
+          should: [
+            { term: { session_id: scope.containerId } },
+            { term: { group_id: scope.containerId } },
+          ],
+        },
+      });
+    }
   }
 
   private attachScores<T extends { id: string }>(rows: T[], hits: CandidateHit[]) {
@@ -453,6 +650,47 @@ export class ElasticsearchSearchBackend implements SearchBackend {
       ...row,
       relevance: maxScore > 0 ? 1 + 2 * (1 - row.score / maxScore) : 3,
     }));
+  }
+
+  private async hydrateUserMemories(
+    hits: CandidateHit[],
+    scope: SearchBackendScope,
+    limit: number,
+  ): Promise<MemorySearchResult[]> {
+    if (hits.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        createdAt: userMemories.createdAt,
+        id: userMemories.id,
+        memoryLayer: userMemories.memoryLayer,
+        summary: userMemories.summary,
+        title: userMemories.title,
+        updatedAt: userMemories.updatedAt,
+      })
+      .from(userMemories)
+      .where(
+        and(
+          inArray(
+            userMemories.id,
+            hits.map(({ id }) => id),
+          ),
+          eq(userMemories.userId, scope.userId),
+        ),
+      );
+
+    return this.attachScores(rows, hits)
+      .slice(0, limit)
+      .map((row) => ({
+        createdAt: row.createdAt,
+        description: truncate(row.summary),
+        id: row.id,
+        memoryLayer: row.memoryLayer,
+        relevance: row.relevance,
+        title: row.title || 'Untitled Memory',
+        type: 'memory' as const,
+        updatedAt: row.updatedAt,
+      }));
   }
 
   private async hydrateAgents(

@@ -14,6 +14,7 @@ import {
   messages,
   sessions,
   topics,
+  userMemories,
   users,
   workspaces,
 } from '../../../schemas';
@@ -80,6 +81,301 @@ afterEach(async () => {
 });
 
 describe('ElasticsearchSearchBackend', () => {
+  it('searches and reauthorizes unified user-memory candidates in PostgreSQL', async () => {
+    await db.insert(userMemories).values([
+      {
+        id: 'memory-own',
+        lastAccessedAt: new Date(),
+        memoryLayer: 'context',
+        title: 'Own memory',
+        userId,
+      },
+      {
+        id: 'memory-other',
+        lastAccessedAt: new Date(),
+        memoryLayer: 'context',
+        title: 'Other memory',
+        userId: otherUserId,
+      },
+    ]);
+    const client = createClient([
+      { _id: 'memory-other', _score: 12 },
+      { _id: 'memory-deleted', _score: 10 },
+      { _id: 'memory-own', _score: 8 },
+    ]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search(
+      request('userMemories', { scope: { workspaceId: undefined } }),
+    );
+
+    expect(response.items).toEqual([
+      expect.objectContaining({ id: 'memory-own', memoryLayer: 'context', type: 'memory' }),
+    ]);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: [{ term: { user_id: userId } }],
+              must: [
+                {
+                  multi_match: {
+                    fields: ['title^4', 'summary^2', 'details'],
+                    operator: 'and',
+                    query: 'search phrase',
+                    type: 'best_fields',
+                  },
+                },
+              ],
+            }),
+          },
+        }),
+        index: 'lobehub-dev-user-memories',
+      }),
+    );
+  });
+
+  it('builds exact memory-layer candidate filters without hydrating index documents', async () => {
+    const client = createClient([{ _id: 'context-1', _score: 7 }]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search({
+      entity: 'memoryContexts',
+      filters: {
+        memoryCategories: ['project'],
+        memoryStatus: ['active'],
+        memoryTags: ['typescript', 'search'],
+        memoryTimeRange: {
+          end: new Date('2026-08-27T00:00:00.000Z'),
+          start: new Date('2026-08-20T00:00:00.000Z'),
+        },
+        memoryTypes: ['workflow'],
+      },
+      mode: 'candidates',
+      pagination: { limit: 3 },
+      query: {
+        fields: ['parent_text', 'title', 'description', 'current_status'],
+        text: 'search-phrase',
+      },
+      scope: { userId },
+    });
+
+    expect(response).toEqual({
+      candidates: [{ id: 'context-1', score: 7 }],
+      items: [],
+      total: 1,
+    });
+    expect(client.search).toHaveBeenCalledWith({
+      body: {
+        _source: false,
+        query: {
+          bool: {
+            filter: [
+              { term: { user_id: userId } },
+              { terms: { parent_memory_categories: ['project'] } },
+              { terms: { type: ['workflow'] } },
+              { terms: { 'current_status.raw': ['active'] } },
+              {
+                bool: {
+                  minimum_should_match: 1,
+                  should: [
+                    { term: { tags: 'typescript' } },
+                    { term: { parent_tags: 'typescript' } },
+                  ],
+                },
+              },
+              {
+                bool: {
+                  minimum_should_match: 1,
+                  should: [{ term: { tags: 'search' } }, { term: { parent_tags: 'search' } }],
+                },
+              },
+              {
+                range: {
+                  captured_at: {
+                    gte: '2026-08-20T00:00:00.000Z',
+                    lte: '2026-08-27T00:00:00.000Z',
+                  },
+                },
+              },
+            ],
+            must: [
+              {
+                multi_match: {
+                  fields: ['parent_text', 'title', 'description', 'current_status'],
+                  operator: 'and',
+                  query: 'search phrase',
+                  type: 'best_fields',
+                },
+              },
+            ],
+            must_not: [],
+          },
+        },
+        size: 12,
+        sort: [{ _score: 'desc' }, { id: 'asc' }],
+        track_total_hits: true,
+      },
+      index: 'lobehub-dev-memory-contexts',
+    });
+  });
+
+  it('preserves the any-tag contract for legacy memory lists', async () => {
+    const client = createClient([]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    await backend.search({
+      entity: 'memoryActivities',
+      filters: {
+        memoryTagMatch: 'any',
+        memoryTags: ['typescript', 'search'],
+      },
+      mode: 'candidates',
+      pagination: { limit: 3 },
+      query: { text: 'candidate' },
+      scope: { userId },
+    });
+
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: [
+                { term: { user_id: userId } },
+                {
+                  bool: {
+                    minimum_should_match: 1,
+                    should: [
+                      {
+                        bool: {
+                          minimum_should_match: 1,
+                          should: [
+                            { term: { tags: 'typescript' } },
+                            { term: { parent_tags: 'typescript' } },
+                          ],
+                        },
+                      },
+                      {
+                        bool: {
+                          minimum_should_match: 1,
+                          should: [
+                            { term: { tags: 'search' } },
+                            { term: { parent_tags: 'search' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('uses legacy field and scope semantics for candidate-only conversation searches', async () => {
+    const client = createClient([]);
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    await backend.search({
+      entity: 'topics',
+      filters: { topicScope: { agentId: 'agent-1' } },
+      mode: 'candidates',
+      pagination: {},
+      query: { fields: ['title'], text: 'legacy topic' },
+      scope: { userId, workspaceId },
+    });
+    await backend.search({
+      entity: 'messages',
+      filters: { topicScope: { groupId: 'group-1' } },
+      mode: 'candidates',
+      pagination: {},
+      query: { fields: ['content'], text: 'legacy message' },
+      scope: { userId, workspaceId },
+    });
+
+    expect(client.search).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: [{ term: { workspace_id: workspaceId } }, { term: { agent_id: 'agent-1' } }],
+              must: [
+                {
+                  multi_match: {
+                    fields: ['title'],
+                    operator: 'and',
+                    query: 'legacy topic',
+                    type: 'best_fields',
+                  },
+                },
+              ],
+            }),
+          },
+        }),
+        index: 'lobehub-dev-topics',
+      }),
+    );
+    expect(client.search).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          query: {
+            bool: expect.objectContaining({
+              filter: [{ term: { workspace_id: workspaceId } }, { term: { group_id: 'group-1' } }],
+              must_not: [],
+            }),
+          },
+        }),
+        index: 'lobehub-dev-messages',
+      }),
+    );
+  });
+
+  it('paginates unbounded legacy candidates with search_after', async () => {
+    const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+      _id: `topic-${index.toString().padStart(4, '0')}`,
+      _score: 1000 - index,
+      sort: [1000 - index, `topic-${index.toString().padStart(4, '0')}`],
+    }));
+    const client: ElasticsearchSearchClient = {
+      search: vi
+        .fn()
+        .mockResolvedValueOnce({ hits: { hits: firstPage, total: { value: 1001 } } })
+        .mockResolvedValueOnce({
+          hits: {
+            hits: [{ _id: 'topic-final', _score: 0, sort: [0, 'topic-final'] }],
+            total: { value: 1001 },
+          },
+        }),
+    };
+    const backend = new ElasticsearchSearchBackend(db, { client, indexNamespace });
+
+    const response = await backend.search({
+      entity: 'topics',
+      filters: {},
+      mode: 'candidates',
+      pagination: {},
+      query: { fields: ['title'], text: 'legacy topic' },
+      scope: { userId },
+    });
+
+    expect(response.candidates).toHaveLength(1001);
+    expect(response.total).toBe(1001);
+    expect(client.search).toHaveBeenCalledTimes(2);
+    expect(client.search).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        body: expect.objectContaining({ search_after: firstPage.at(-1)?.sort }),
+      }),
+    );
+  });
+
   it('queries weighted agent fields and rechecks workspace visibility during hydration', async () => {
     await db.insert(agents).values([
       {
@@ -97,6 +393,13 @@ describe('ElasticsearchSearchBackend', () => {
         workspaceId,
       },
       {
+        id: 'agent-legacy-public',
+        title: 'Legacy public workspace agent',
+        userId: otherUserId,
+        visibility: 'public',
+        workspaceId,
+      },
+      {
         id: 'agent-private-other',
         title: 'Other private workspace agent',
         userId: otherUserId,
@@ -106,6 +409,7 @@ describe('ElasticsearchSearchBackend', () => {
     ]);
     const client = createClient([
       { _id: 'agent-private-other', _score: 12 },
+      { _id: 'agent-legacy-public', _score: 11 },
       { _id: 'agent-public', _score: 10 },
       { _id: 'agent-private-own', _score: 8 },
       { _id: 'agent-deleted', _score: 7 },
@@ -119,11 +423,16 @@ describe('ElasticsearchSearchBackend', () => {
 
     expect(response.candidates).toEqual([
       { id: 'agent-private-other', score: 12 },
+      { id: 'agent-legacy-public', score: 11 },
       { id: 'agent-public', score: 10 },
       { id: 'agent-private-own', score: 8 },
       { id: 'agent-deleted', score: 7 },
     ]);
-    expect(response.items.map(({ id }) => id)).toEqual(['agent-public', 'agent-private-own']);
+    expect(response.items.map(({ id }) => id)).toEqual([
+      'agent-legacy-public',
+      'agent-public',
+      'agent-private-own',
+    ]);
     expect(client.search).toHaveBeenCalledWith({
       body: {
         _source: false,
@@ -134,7 +443,11 @@ describe('ElasticsearchSearchBackend', () => {
               {
                 bool: {
                   minimum_should_match: 1,
-                  should: [{ term: { visibility: 'public' } }, { term: { user_id: userId } }],
+                  should: [
+                    { bool: { must_not: [{ exists: { field: 'visibility' } }] } },
+                    { term: { visibility: 'public' } },
+                    { term: { user_id: userId } },
+                  ],
                 },
               },
             ],
@@ -160,7 +473,7 @@ describe('ElasticsearchSearchBackend', () => {
     const publicCaller = await backend.search(
       request('agents', { scope: { callerAgentVisibility: 'public' } }),
     );
-    expect(publicCaller.items.map(({ id }) => id)).toEqual(['agent-public']);
+    expect(publicCaller.items.map(({ id }) => id)).toEqual(['agent-legacy-public', 'agent-public']);
   });
 
   it('searches chat-group content while personal hydration blocks workspace and stale hits', async () => {
@@ -1039,14 +1352,14 @@ describe('ElasticsearchSearchBackend', () => {
     );
   });
 
-  it('rejects entities that have not migrated to Elasticsearch yet', async () => {
+  it('rejects memory-layer entities in hydrated product-result mode', async () => {
     const backend = new ElasticsearchSearchBackend(db, {
-      client: createClient([]),
+      client: createClient([{ _id: 'context-1', _score: 1 }]),
       indexNamespace,
     });
 
-    await expect(backend.search(request('userMemories'))).rejects.toThrow(
-      'Unsupported Elasticsearch search entity: userMemories',
+    await expect(backend.search(request('memoryContexts'))).rejects.toThrow(
+      'Memory-layer entity only supports candidate search: memoryContexts',
     );
   });
 });
