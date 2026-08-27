@@ -30,6 +30,7 @@ import { UserModel } from '@/database/models/user';
 import { VerifyRunModel } from '@/database/models/verifyRun';
 import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
 import type { LobeChatDatabase } from '@/database/type';
+import { createOwnerPrincipal } from '@/server/services/executionPrincipal';
 
 import { AiAgentService } from '../aiAgent';
 import { extractFileIdsFromEditorData } from '../file/extractFileIdsFromEditorData';
@@ -347,7 +348,7 @@ export class TaskService {
     }
 
     if (target.operationId) {
-      const aiAgentService = new AiAgentService(this.db, this.userId, {
+      const aiAgentService = new AiAgentService(this.db, createOwnerPrincipal(this.userId), {
         workspaceId: this.workspaceId,
       });
       await aiAgentService.interruptTask({ operationId: target.operationId });
@@ -366,7 +367,7 @@ export class TaskService {
     if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Topic not found.' });
 
     if (target.status === 'running' && target.operationId) {
-      const aiAgentService = new AiAgentService(this.db, this.userId, {
+      const aiAgentService = new AiAgentService(this.db, createOwnerPrincipal(this.userId), {
         workspaceId: this.workspaceId,
       });
       await aiAgentService.interruptTask({ operationId: target.operationId });
@@ -457,7 +458,7 @@ export class TaskService {
 
     if (resolved.status === 'running' && status !== 'running') {
       const topics = await this.taskTopicModel.findByTaskId(resolved.id);
-      const aiAgentService = new AiAgentService(this.db, this.userId, {
+      const aiAgentService = new AiAgentService(this.db, createOwnerPrincipal(this.userId), {
         workspaceId: this.workspaceId,
       });
 
