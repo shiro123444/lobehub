@@ -645,6 +645,18 @@ export const desktopRoutes: RouteObject[] = [
         path: 'page',
       },
 
+      // Runtime routes
+      {
+        children: [
+          {
+            element: dynamicElement(() => import('@/routes/(main)/runtime'), 'Desktop > Runtime'),
+            index: true,
+          },
+        ],
+        errorElement: <ErrorBoundary />,
+        path: 'runtime',
+      },
+
       // Default route - home page (handled by persistent layout)
       {
         index: true,

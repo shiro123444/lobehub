@@ -77,6 +77,7 @@ import ResourceHomeLayout from '@/routes/(main)/resource/(home)/_layout';
 import ResourceLibraryPage from '@/routes/(main)/resource/library';
 import ResourceLibraryLayout from '@/routes/(main)/resource/library/_layout';
 import ResourceLibrarySlugPage from '@/routes/(main)/resource/library/[slug]';
+import RuntimePage from '@/routes/(main)/runtime';
 import SettingsTabPage from '@/routes/(main)/settings';
 import SettingsLayout from '@/routes/(main)/settings/_layout';
 import { ProviderDetailPage, ProviderLayout } from '@/routes/(main)/settings/provider';
@@ -513,6 +514,18 @@ export const desktopRoutes: RouteObject[] = [
         element: <DesktopPageLayout />,
         errorElement: <ErrorBoundary />,
         path: 'page',
+      },
+
+      // Runtime routes
+      {
+        children: [
+          {
+            element: <RuntimePage />,
+            index: true,
+          },
+        ],
+        errorElement: <ErrorBoundary />,
+        path: 'runtime',
       },
 
       // Default route - home page (handled by persistent layout)

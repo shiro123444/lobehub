@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Define a union type for feature flag values: either boolean or array of user IDs
-const FeatureFlagValue = z.union([z.boolean(), z.array(z.string())]);
+export const FeatureFlagValue = z.union([z.boolean(), z.array(z.string())]);
 const isDev = process.env.NODE_ENV === 'development';
 
 export const FeatureFlagsSchema = z.object({
@@ -32,6 +32,8 @@ export const FeatureFlagsSchema = z.object({
   // internal flag
   agent_self_iteration: FeatureFlagValue.optional(),
   agent_onboarding: FeatureFlagValue.optional(),
+  // Runtime migration compatibility; keep disabled until explicitly rolled out.
+  runtime_v1_agent_ops: FeatureFlagValue.optional(),
   // Cloud feature flag. Keep here until cloud owns a separate runtime flag domain.
   auth_captcha: FeatureFlagValue.optional(),
   cloud_promotion: FeatureFlagValue.optional(),
@@ -82,6 +84,9 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
 
   agent_self_iteration: isDev,
   agent_onboarding: isDev,
+  // Deliberately omitted: undefined is the central-config absence sentinel;
+  // mapFeatureFlagsEnvToState normalizes it to false while compat can still
+  // use RUNTIME_V1_AGENT_OPS as a fallback. An explicit central false wins.
   auth_captcha: true,
   cloud_promotion: false,
 
@@ -116,6 +121,7 @@ export const mapFeatureFlagsEnvToState = (config: IFeatureFlags, userId?: string
     enableRAGEval: evaluateFeatureFlag(config.rag_eval, userId),
     enableAgentSelfIteration: evaluateFeatureFlag(config.agent_self_iteration, userId),
     enableAgentOnboarding: evaluateFeatureFlag(config.agent_onboarding, userId),
+    enableRuntimeV1AgentOps: evaluateFeatureFlag(config.runtime_v1_agent_ops, userId) ?? false,
     enableAuthCaptcha: evaluateFeatureFlag(config.auth_captcha, userId),
 
     showCloudPromotion: evaluateFeatureFlag(config.cloud_promotion, userId),

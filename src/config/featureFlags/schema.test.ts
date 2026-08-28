@@ -33,6 +33,11 @@ describe('FeatureFlagsSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('should validate runtime_v1_agent_ops as a boolean or user allowlist', () => {
+    expect(FeatureFlagsSchema.safeParse({ runtime_v1_agent_ops: false }).success).toBe(true);
+    expect(FeatureFlagsSchema.safeParse({ runtime_v1_agent_ops: ['user-123'] }).success).toBe(true);
+  });
+
   it('should validate mixed boolean and array values', () => {
     const result = FeatureFlagsSchema.safeParse({
       edit_agent: ['user-123'],
@@ -101,6 +106,17 @@ describe('evaluateFeatureFlag', () => {
 });
 
 describe('mapFeatureFlagsEnvToState', () => {
+  it('should keep runtime_v1_agent_ops effectively disabled by default and map its state', () => {
+    // The raw omission is intentional: it preserves the central-config
+    // absence sentinel needed by the compatibility env fallback.
+    expect(DEFAULT_FEATURE_FLAGS.runtime_v1_agent_ops).toBeUndefined();
+    expect(mapFeatureFlagsEnvToState(DEFAULT_FEATURE_FLAGS).enableRuntimeV1AgentOps).toBe(false);
+    expect(
+      mapFeatureFlagsEnvToState({ ...DEFAULT_FEATURE_FLAGS, runtime_v1_agent_ops: true })
+        .enableRuntimeV1AgentOps,
+    ).toBe(true);
+  });
+
   it('should enable auth captcha by default', () => {
     const mappedState = mapFeatureFlagsEnvToState(DEFAULT_FEATURE_FLAGS);
 
