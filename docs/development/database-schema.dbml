@@ -448,6 +448,9 @@ table agent_intervention_resolutions {
     (status, created_at) [name: 'agent_intervention_resolutions_status_created_idx']
 
 
+
+
+
   }
 }
 
@@ -2856,6 +2859,39 @@ table resource_transfer_requests {
   }
 }
 
+table search_sync_outbox {
+  attempts integer [not null, default: 0]
+  available_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  dead_at "timestamp with time zone"
+  document_id text [not null]
+  entity text [not null]
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  last_error text
+  locked_until "timestamp with time zone"
+  priority smallint [not null, default: 10]
+  revision bigint [not null, default: `nextval('search_sync_revision_seq')`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (entity, document_id) [name: 'search_sync_outbox_entity_document_id_unique', unique]
+    (priority, available_at, revision) [name: 'search_sync_outbox_claim_idx']
+    locked_until [name: 'search_sync_outbox_lease_idx']
+  }
+}
+
+table search_sync_settings {
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  enabled boolean [not null, default: false]
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  key text [not null, default: 'default']
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    key [name: 'search_sync_settings_key_unique', unique]
+  }
+}
+
 table session_groups {
   id text [pk, not null]
   name text [not null]
@@ -3420,6 +3456,7 @@ table user_memories_contexts {
     description_vector [name: 'user_memories_contexts_description_vector_index']
     type [name: 'user_memories_contexts_type_index']
     user_id [name: 'user_memories_contexts_user_id_index']
+    user_memory_ids [name: 'user_memories_contexts_user_memory_ids_gin_idx']
   }
 }
 
