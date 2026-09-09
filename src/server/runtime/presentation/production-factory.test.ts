@@ -6,8 +6,23 @@ import type {
   PresentationRunner,
 } from '../../../../packages/cordis-kernel/src/presentation';
 import { PresentationError } from '../../../../packages/cordis-kernel/src/presentation';
-import type { PptMasterPortFactoryOptions, PptMasterPresentationScope } from './production-factory';
-import { createPptMasterPresentationPortFactory } from './production-factory';
+import type { ProductionPresentationProvider } from './production-command';
+import {
+  PRODUCTION_PRESENTATION_ENV_KEYS,
+  type ProductionPresentationEnv,
+} from './production-config';
+import type {
+  PptMasterPortFactoryOptions,
+  PptMasterPresentationScope,
+  PptMasterProductionPortFactoryOptions,
+  PptMasterProductionPresentationCompositionOptions,
+} from './production-factory';
+import {
+  createPptMasterPresentationPortFactory,
+  createPptMasterProductionPresentationComposition,
+  createPptMasterProductionPresentationPortFactory,
+  createProductionPresentationGenerationComposition,
+} from './production-factory';
 
 const baseScope = (
   overrides: Partial<PptMasterPresentationScope> = {},
@@ -63,8 +78,8 @@ const input: PresentationJobInput = {
 const makePptxBytes = (): Uint8Array => {
   const name = '[Content_Types].xml';
   const header = new Uint8Array(30 + name.length + 8);
-  header.set([0x50, 0x4b, 0x03, 0x04], 0); // local file header signature
-  header[26] = name.length & 0xff; // file name length (LE)
+  header.set([80, 75, 3, 4], 0); // local file header signature
+  header[26] = name.length & 255; // file name length (LE)
   header[27] = 0;
   header[28] = 0; // extra field length (LE)
   header[29] = 0;
@@ -92,6 +107,54 @@ const workingRunner = (): PresentationRunner => ({
 });
 
 describe('C-33 PptMaster presentation port production factory', () => {
+  it('connects the explicit production provider command seam without spawning during assembly', () => {
+    const runner = makeRunner();
+    const runnerFactory = vi.fn((_provider: ProductionPresentationProvider) => runner);
+    const options: PptMasterProductionPortFactoryOptions = {
+      productionProvider: {
+        provider: 'ppt-master',
+        command: ['node', '/opt/ppt-master/cli.mjs'],
+        commandArgs: ['--quiet'],
+        runnerId: 'ppt-master-runner',
+        allowedRunnerIds: ['ppt-master-runner'],
+      },
+      runnerFactory,
+    };
+
+    const factory = createPptMasterProductionPresentationPortFactory(options);
+    expect(runnerFactory).toHaveBeenCalledTimes(1);
+    const provider = runnerFactory.mock.calls[0]![0];
+    expect(provider.command).toEqual(['node', '/opt/ppt-master/cli.mjs']);
+    expect(provider.commandArgs).toEqual(['--quiet']);
+    expect(provider.allowedRunnerIds).toEqual(['ppt-master-runner']);
+    expect(
+      provider.buildArgv({
+        operation: 'export',
+        jobId: 'artifact-1:export:pptx',
+        artifactId: 'artifact-1',
+        format: 'pptx',
+        workspacePath: '/ws/export-1',
+      }),
+    ).toContain('/ws/export-1/input.pptx');
+
+    const binding = factory(baseScope());
+    expect(binding.port).toBeDefined();
+    expect(runner.spawn).not.toHaveBeenCalled();
+  });
+
+  it('keeps a missing production provider as PROVIDER_UNAVAILABLE', () => {
+    const runnerFactory = vi.fn(() => makeRunner());
+    const factory = createPptMasterProductionPresentationPortFactory({
+      productionProvider: {},
+      runnerFactory,
+    });
+
+    expect(runnerFactory).not.toHaveBeenCalled();
+    expect(() => factory(baseScope())).toThrowError(
+      expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE' }),
+    );
+  });
+
   it('assembles a port per authenticated scope and echoes the scope verbatim', () => {
     const factory = createPptMasterPresentationPortFactory(baseOptions());
     const scope = baseScope();
@@ -105,6 +168,7 @@ describe('C-33 PptMaster presentation port production factory', () => {
       'cancelJob',
       'retryJob',
       'getArtifact',
+      'readArtifactBytes',
       'exportArtifact',
       'dispose',
     ] as const) {
@@ -311,5 +375,347 @@ describe('C-33 PptMaster presentation port production factory', () => {
       status: 'ready',
       type: 'pptx',
     });
+  });
+});
+
+const productionEnv = {
+  [PRODUCTION_PRESENTATION_ENV_KEYS.provider]: 'ppt-master',
+  [PRODUCTION_PRESENTATION_ENV_KEYS.command]: JSON.stringify(['node', '/opt/ppt/runner.js']),
+  [PRODUCTION_PRESENTATION_ENV_KEYS.commandArgs]: JSON.stringify(['--quiet']),
+  [PRODUCTION_PRESENTATION_ENV_KEYS.runnerId]: 'ppt-master-runner',
+  [PRODUCTION_PRESENTATION_ENV_KEYS.allowedRunnerIds]: JSON.stringify(['ppt-master-runner']),
+} as const;
+
+const compositionOptions = (
+  overrides: Partial<PptMasterProductionPresentationCompositionOptions> = {},
+): PptMasterProductionPresentationCompositionOptions => ({
+  env: productionEnv,
+  runnerFactory: () => makeRunner(),
+  ...overrides,
+});
+
+describe('C-77 production presentation composition wiring', () => {
+  it('loads C-75 configuration, exposes safe readiness, and does not spawn at assembly', () => {
+    const runner = makeRunner();
+    const runnerFactory = vi.fn(() => runner);
+    const workspaceFactory = vi.fn((jobId: string) => ({
+      path: `/workspace/${jobId}`,
+      cleanup: async () => undefined,
+    }));
+    const composition = createPptMasterProductionPresentationComposition(
+      compositionOptions({ runnerFactory, workspaceFactory }),
+    );
+
+    expect(composition.readiness).toMatchObject({
+      available: true,
+      commandAvailable: true,
+      provider: 'ppt-master',
+      runnerId: 'ppt-master-runner',
+    });
+    expect(runnerFactory).toHaveBeenCalledTimes(1);
+    expect(runner.spawn).not.toHaveBeenCalled();
+    expect(workspaceFactory).not.toHaveBeenCalled();
+    expect(composition.portFactory(baseScope()).port).toBeDefined();
+  });
+
+  it('keeps missing configuration unavailable and never asks for a runner', () => {
+    const runnerFactory = vi.fn(() => makeRunner());
+    const composition = createPptMasterProductionPresentationComposition({
+      env: {},
+      runnerFactory,
+    });
+
+    expect(composition.readiness).toMatchObject({
+      available: false,
+      code: 'PROVIDER_UNAVAILABLE',
+    });
+    expect(runnerFactory).not.toHaveBeenCalled();
+    expect(() => composition.portFactory(baseScope())).toThrowError(
+      expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE' }),
+    );
+  });
+
+  it('preserves C-75 invalid configuration and C-53 runner allow-list errors', () => {
+    expect(() =>
+      createPptMasterProductionPresentationComposition({
+        ...compositionOptions(),
+        env: {
+          [PRODUCTION_PRESENTATION_ENV_KEYS.provider]: 'ppt-master',
+          [PRODUCTION_PRESENTATION_ENV_KEYS.command]: '{',
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'PRESENTATION_INVALID' }));
+
+    expect(() =>
+      createPptMasterProductionPresentationComposition({
+        ...compositionOptions(),
+        env: {
+          ...productionEnv,
+          [PRODUCTION_PRESENTATION_ENV_KEYS.allowedRunnerIds]: JSON.stringify(['other-runner']),
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'PRESENTATION_RUNNER_NOT_ALLOWED' }));
+  });
+
+  it('creates independent ports for authenticated scopes without sharing adapter state', async () => {
+    const runner = makeRunner({
+      spawn: vi.fn(() => {
+        throw new Error('fake runner must not complete a provider job');
+      }),
+    });
+    const composition = createPptMasterProductionPresentationComposition(
+      compositionOptions({ runnerFactory: () => runner }),
+    );
+    const bindingA = composition.portFactory(
+      baseScope({ userId: 'user-a', sessionId: 'session-a' }),
+    );
+    const bindingB = composition.portFactory(
+      baseScope({ userId: 'user-b', sessionId: 'session-b' }),
+    );
+
+    expect(bindingA.port).not.toBe(bindingB.port);
+    const jobA = await bindingA.port.createJob(input);
+
+    await expect(bindingA.port.getJob(jobA.jobId)).resolves.toMatchObject({ jobId: jobA.jobId });
+    await expect(bindingB.port.getJob(jobA.jobId)).resolves.toBe(null);
+  });
+
+  it('accepts an explicit scope/workspace dependency without executing it during composition', () => {
+    const workspaceFactory = vi.fn((jobId: string) => ({
+      path: `/workspace/${jobId}`,
+      cleanup: async () => undefined,
+    }));
+    const composition = createPptMasterProductionPresentationComposition(
+      compositionOptions({ workspaceFactory }),
+    );
+
+    composition.portFactory(baseScope({ userId: 'scoped-user', sessionId: 'scoped-session' }));
+
+    expect(workspaceFactory).not.toHaveBeenCalled();
+  });
+});
+
+describe('createProductionPresentationGenerationComposition (R2-A pipeline)', () => {
+  const makeMockChatPort = () => ({
+    chat: vi.fn(async () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              aspectRatio: '16:9',
+              planId: 'plan-real-1',
+              slides: [
+                {
+                  notes: '封面',
+                  order: 1,
+                  slideId: 'slide-1',
+                  svg: '<svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="540" fill="#0f172a"/><text x="480" y="270" font-size="36" fill="#f8fafc" text-anchor="middle">产品发布会</text></svg>',
+                },
+                {
+                  notes: '核心亮点',
+                  order: 2,
+                  slideId: 'slide-2',
+                  svg: '<svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="540" fill="#1e293b"/><text x="100" y="100" font-size="28" fill="#38bdf8">核心亮点</text></svg>',
+                },
+              ],
+              title: '产品发布会',
+            }),
+          },
+        },
+      ],
+    })),
+    manifest: { model: 'glm-5.3-flash', providerId: 'glm-multimodal' },
+  });
+
+  const makeMockImageCapability = () => ({
+    generate: vi.fn(async (_scope: unknown, slots: any[]) => ({
+      slots: slots.map((s) => ({
+        assetRef: `asset-${s.slotId}`,
+        slideId: s.slideId,
+        slotId: s.slotId,
+        state: 'ready' as const,
+      })),
+    })),
+  });
+
+  const validPipelineEnv: ProductionPresentationEnv = {
+    [PRODUCTION_PRESENTATION_ENV_KEYS.allowedRunnerIds]: JSON.stringify(['ppt-master-runner']),
+    [PRODUCTION_PRESENTATION_ENV_KEYS.command]: JSON.stringify([
+      'python3',
+      '/opt/ppt-master/run.py',
+    ]),
+    [PRODUCTION_PRESENTATION_ENV_KEYS.provider]: 'ppt-master',
+    [PRODUCTION_PRESENTATION_ENV_KEYS.runnerId]: 'ppt-master-runner',
+  };
+
+  it('assembles generation pipeline without side-effects or network calls during construction', () => {
+    const chatPort = makeMockChatPort();
+    const imageCap = makeMockImageCapability();
+    const result = createProductionPresentationGenerationComposition({
+      imageGenerationCapability: imageCap as any,
+      multimodalChatPort: chatPort as any,
+    });
+
+    expect(result.composition).toBeDefined();
+    expect(result.readiness).toBeDefined();
+    expect(chatPort.chat).not.toHaveBeenCalled();
+    expect(imageCap.generate).not.toHaveBeenCalled();
+  });
+
+  it('runs complete planner -> image provider -> worker -> artifact pipeline end-to-end', async () => {
+    const chatPort = makeMockChatPort();
+    const imageCap = makeMockImageCapability();
+    const mockWorker = {
+      run: vi.fn(async (plan: any, context: any) => {
+        const artifacts = [
+          {
+            artifactId: `${context.jobId}:deck.pptx`,
+            bytes: pptxBytes,
+            mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            name: 'deck.pptx',
+            type: 'pptx',
+          },
+          ...plan.slides.map((s: any) => ({
+            artifactId: `${context.jobId}:${s.slideId}.svg`,
+            bytes: new TextEncoder().encode(s.svg),
+            mimeType: 'image/svg+xml',
+            name: `${s.slideId}.svg`,
+            type: 'svg',
+          })),
+        ];
+        return {
+          artifacts,
+          jobId: context.jobId,
+          planId: plan.planId,
+          qualityReport: { passed: true, score: 98 },
+        };
+      }),
+    };
+
+    const { composition, readiness } = createProductionPresentationGenerationComposition({
+      env: validPipelineEnv,
+      imageGenerationCapability: imageCap as any,
+      multimodalChatPort: chatPort as any,
+      worker: mockWorker,
+    });
+
+    expect(readiness.state).toBe('configured');
+    const generationPortFactory = composition.generationPortFactory!;
+    expect(generationPortFactory).toBeDefined();
+
+    const scope = baseScope({ userId: 'u-gen', sessionId: 's-gen' });
+    const port = generationPortFactory(scope);
+
+    // Create job with imageSlots
+    const created = await port.createJob({
+      notebookId: 'nb-prod',
+      options: {
+        imageSlots: [{ prompt: '发布会主视觉', slideId: 'slide-1', slotId: 'hero-img' }],
+      },
+      slideCount: 2,
+      sourceVersionIds: ['v1'],
+      title: '产品发布会',
+    });
+
+    expect(created.jobId).toBeTruthy();
+    expect(created.state).toBe('queued');
+
+    // Wait for background generation to finish
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Check image capability was called with normalized slots
+    expect(imageCap.generate).toHaveBeenCalledWith(
+      scope,
+      [
+        expect.objectContaining({
+          idempotencyKey: expect.any(String),
+          prompt: '发布会主视觉',
+          slideId: 'slide-1',
+          slotId: 'hero-img',
+        }),
+      ],
+      expect.anything(),
+    );
+
+    // Check GLM chatPort was called to plan the presentation
+    expect(chatPort.chat).toHaveBeenCalled();
+
+    // Check worker executed and produced artifacts
+    expect(mockWorker.run).toHaveBeenCalled();
+
+    // Verify job completed and all artifacts are readable
+    const job = await port.getJob(created.jobId);
+    expect(job).toMatchObject({
+      jobId: created.jobId,
+      state: 'completed',
+    });
+    expect(job?.artifactIds?.length).toBe(3); // pptx + 2 slide svgs
+
+    const pptxArtifact = await port.getArtifact(job!.artifactIds![0]);
+    expect(pptxArtifact).toMatchObject({
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      name: 'deck.pptx',
+      status: 'ready',
+    });
+
+    await composition.dispose();
+  });
+
+  it('fails with PROVIDER_UNAVAILABLE when image slots are requested but image capability is missing', async () => {
+    const chatPort = makeMockChatPort();
+    const { composition, readiness } = createProductionPresentationGenerationComposition({
+      env: validPipelineEnv,
+      multimodalChatPort: chatPort as any,
+    });
+
+    expect(readiness.state).toBe('configured');
+    const port = composition.generationPortFactory!(baseScope());
+    const job = await port.createJob({
+      notebookId: 'nb-no-img',
+      options: {
+        imageSlots: [{ prompt: '未配置生图', slideId: 's1', slotId: 'img1' }],
+      },
+      sourceVersionIds: ['v1'],
+      title: '无生图测试',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const failedJob = await port.getJob(job.jobId);
+    expect(failedJob).toMatchObject({
+      error: expect.objectContaining({ code: 'PROVIDER_UNAVAILABLE' }),
+      state: 'failed',
+    });
+
+    await composition.dispose();
+  });
+
+  it('fails-closed with PROVIDER_UNAVAILABLE when runner/provider is missing even if GLM and image are configured', async () => {
+    const chatPort = makeMockChatPort();
+    const imageCap = makeMockImageCapability();
+    const { composition, readiness } = createProductionPresentationGenerationComposition({
+      imageGenerationCapability: imageCap as any,
+      multimodalChatPort: chatPort as any,
+    });
+
+    expect(readiness.state).toBe('unavailable');
+    expect(composition.generationPortFactory).toBeUndefined();
+
+    const scope = baseScope({ userId: 'u-fail', sessionId: 's-fail' });
+    const req = new Request('https://example.test/api/runtime/presentation/jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        notebookId: 'nb-fail',
+        sourceVersionIds: ['v-fail'],
+        title: '缺 provider 失败测试',
+      }),
+    });
+
+    const response = await composition.generationHandler(req, scope);
+    expect(response.status).toBe(503);
+    const body = response.body as { error: { code: string } };
+    expect(body.error.code).toBe('PROVIDER_UNAVAILABLE');
+
+    await composition.dispose();
   });
 });

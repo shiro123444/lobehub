@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PresentationPort } from '../../../../packages/cordis-kernel/src/presentation';
-import type { PresentationCacheScope } from './cache';
+import type { PresentationCacheLoader, PresentationCacheScope } from './cache';
 import {
   bindPresentationCacheShutdown,
   PresentationCacheError,
@@ -13,14 +13,12 @@ const scopeB: PresentationCacheScope = { userId: 'user-b', sessionId: 'session-b
 
 let portSequence = 0;
 
-const makePort = (
-  overrides: Partial<Record<keyof PresentationPort, unknown>> = {},
-): PresentationPort => {
+const makePort = (overrides: Partial<PresentationPort> = {}): PresentationPort => {
   portSequence += 1;
   return {
     createJob: vi.fn(async () => ({
       jobId: `job-${portSequence}`,
-      state: 'queued',
+      state: 'queued' as const,
       createdAt: '',
       updatedAt: '',
     })),
@@ -87,7 +85,7 @@ describe('C-23 scoped PresentationPort cache', () => {
 
   it('rejects structurally invalid loader output and does not cache it', async () => {
     const badValue = { createJob: 'not a function' };
-    const load = vi.fn(() => Promise.resolve(badValue as never));
+    const load = vi.fn<PresentationCacheLoader>(() => Promise.resolve(badValue as never));
     const cache = new ScopedPresentationPortCache({ load });
 
     await expect(cache.resolve(scopeA)).rejects.toBeInstanceOf(PresentationCacheError);
@@ -125,8 +123,10 @@ describe('C-23 scoped PresentationPort cache', () => {
   });
 
   it('does not cache rejected loads; the next resolve retried the loader', async () => {
-    const failing = vi.fn(() => Promise.reject(new Error('provider exploded')));
-    const cache = new ScopedPresentationPortCache({ load: failing as never });
+    const failing = vi.fn<PresentationCacheLoader>(() =>
+      Promise.reject(new Error('provider exploded')),
+    );
+    const cache = new ScopedPresentationPortCache({ load: failing });
 
     await expect(cache.resolve(scopeA)).rejects.toThrow('provider exploded');
     expect(cache.size).toBe(0);

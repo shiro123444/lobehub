@@ -38,7 +38,7 @@ export const PluginPanel = memo(() => {
     <aside className={styles.panel} data-testid="workspace-plugin-panel">
       <div className={styles.header}>
         <Flexbox horizontal align="center" gap={6}>
-          <Icon icon={Plug} size={{ fontSize: 14 }} />
+          <Icon icon={Plug} size={14} />
           <span>Plugins ({pluginEntries.length})</span>
         </Flexbox>
       </div>

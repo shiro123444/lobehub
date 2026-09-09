@@ -91,12 +91,15 @@ const requireScopeField = (
   }
 };
 
+const hasFacadeHandle = (value: unknown): value is RuntimeFacadePort =>
+  isRecord(value) && typeof value.handle === 'function';
+
 const facadePortFrom = (result: RuntimeFacadeFactoryResult): RuntimeFacadePort => {
-  if (isRecord(result) && isRecord(result.facade) && typeof result.facade.handle === 'function') {
-    return result.facade as RuntimeFacadePort;
+  if (isRecord(result) && hasFacadeHandle(result.facade)) {
+    return result.facade;
   }
-  if (typeof (result as { handle?: unknown })?.handle === 'function') {
-    return result as RuntimeFacadePort;
+  if (hasFacadeHandle(result)) {
+    return result;
   }
   throw new LegacyCompatError(
     'LEGACY_COMPAT_RUNTIME_FAILED',

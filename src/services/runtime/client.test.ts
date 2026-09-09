@@ -584,4 +584,75 @@ describe('RuntimeClient', () => {
       /Failed to export artifact art-pptx-1 \(504 Gateway Timeout\): PDF Conversion Failed/,
     );
   });
+
+  it('exportArtifact rejects empty or whitespace URI from backend', async () => {
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ artifactId: 'art-1', format: 'pdf', uri: '   ' }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }),
+    );
+
+    const client = new RuntimeClientImpl({ fetcher: mockFetcher });
+    await expect(client.exportArtifact('art-1', 'pdf')).rejects.toThrow(
+      /Export result returned an empty URI for artifact art-1/,
+    );
+  });
+
+  it('downloadArtifact requests octet-stream and returns real Blob', async () => {
+    const binaryData = new Uint8Array([1, 2, 3, 4]);
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(binaryData, {
+        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+        status: 200,
+      }),
+    );
+
+    const client = new RuntimeClientImpl({ fetcher: mockFetcher });
+    const blob = await client.downloadArtifact('art-pptx-1');
+
+    expect(mockFetcher).toHaveBeenCalledWith(
+      '/api/runtime/presentation/artifacts/art-pptx-1',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: 'GET',
+      }),
+    );
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBe(4);
+  });
+
+  it('subscribePresentationJob incrementally resumes stream from afterSeq on reconnect', async () => {
+    const sseBody = [
+      'data: {"protocol_version":"runtime.v1","job_id":"job-resume","seq":3,"type":"artifactReady","data":{"artifact":{"artifactId":"job-resume:slide:1","status":"ready"}}}\n\n',
+      'data: {"protocol_version":"runtime.v1","job_id":"job-resume","seq":4,"type":"completed","data":{"job":{"jobId":"job-resume","state":"completed"}}}\n\n',
+    ].join('');
+
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(sseBody, {
+        headers: { 'Content-Type': 'text/event-stream' },
+        status: 200,
+      }),
+    );
+
+    const client = new RuntimeClientImpl({ fetcher: mockFetcher });
+    const receivedSeqs: number[] = [];
+    const receivedEvents = [];
+
+    for await (const event of client.subscribePresentationJob('job-resume', {
+      afterSeq: 2,
+      onSeqReceived: (seq) => receivedSeqs.push(seq),
+    })) {
+      receivedEvents.push(event);
+    }
+
+    expect(mockFetcher).toHaveBeenCalledWith(
+      '/api/runtime/presentation/jobs/job-resume/events?after_seq=2',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(receivedSeqs).toEqual([3, 4]);
+    expect(receivedEvents).toHaveLength(2);
+    expect(receivedEvents[0].seq).toBe(3);
+    expect(receivedEvents[1].seq).toBe(4);
+  });
 });

@@ -1,4 +1,5 @@
 export * from './context';
+export * from './capability';
 export * from './events';
 export * from './facade';
 export { Fiber } from './fiber';

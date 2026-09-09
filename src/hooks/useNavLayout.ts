@@ -64,6 +64,12 @@ export const useNavLayout = (): NavLayout => {
           title: t('tab.pages'),
           url: '/page',
         },
+        {
+          icon: getRouteById('presentation')!.icon,
+          key: SidebarTabKey.Presentation,
+          title: t('tab.presentation'),
+          url: '/presentation',
+        },
       ] as NavItem[],
     [t, toggleCommandMenu],
   );

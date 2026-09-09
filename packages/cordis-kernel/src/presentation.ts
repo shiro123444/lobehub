@@ -60,6 +60,11 @@ export interface PresentationPort {
   retryJob: (jobId: string) => Promise<PresentationJob>;
 }
 
+/** Server-only extension for adapters that can retrieve artifact bytes. */
+export interface PresentationBinaryPort extends PresentationPort {
+  readArtifactBytes: (artifactId: string) => Promise<Uint8Array | null>;
+}
+
 export interface PresentationRunnerArtifact {
   readonly bytes: Uint8Array;
   readonly mimeType?: string;
@@ -213,6 +218,22 @@ const cloneInput = (input: PresentationJobInput): PresentationJobInput => ({
   options: input.options ? { ...input.options } : undefined,
 });
 
+const canonicalizeJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, canonicalizeJson(nested)]),
+    );
+  }
+  return value;
+};
+
+/** Stable UTF-8 input payload written by the runner before a create spawn. */
+export const serializePresentationInput = (input: PresentationJobInput): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(canonicalizeJson(cloneInput(input))));
+
 const cloneJob = (job: StoredJob): PresentationJob => ({
   jobId: job.jobId,
   state: job.state,
@@ -276,12 +297,24 @@ const validateInput = (input: PresentationJobInput): PresentationJobInput => {
 
 const defaultArgs: PresentationArgsBuilder = (context) => {
   if (context.operation === 'create') {
-    return ['generate', '--job-id', context.jobId, '--input-json', JSON.stringify(context.input)];
+    return [
+      'generate',
+      '--job-id',
+      context.jobId,
+      '--workspace',
+      context.workspacePath,
+      '--input-file',
+      join(context.workspacePath, 'input.json'),
+    ];
   }
   return [
     'export',
     '--job-id',
     context.jobId,
+    '--workspace',
+    context.workspacePath,
+    '--input-file',
+    join(context.workspacePath, 'input.pptx'),
     '--artifact-id',
     context.artifactId ?? '',
     '--format',
@@ -386,7 +419,7 @@ const mimeForArtifact = (
   artifact: PresentationRunnerArtifact,
 ): string => artifact.mimeType ?? MIME_BY_FORMAT[format];
 
-export class PptMasterAdapter implements PresentationPort {
+export class PptMasterAdapter implements PresentationBinaryPort {
   private readonly jobs = new Map<string, StoredJob>();
   private readonly artifacts = new Map<string, StoredArtifact>();
   private readonly provider?: string;
@@ -505,6 +538,11 @@ export class PptMasterAdapter implements PresentationPort {
     return artifact ? cloneArtifact(artifact) : null;
   }
 
+  async readArtifactBytes(artifactId: string): Promise<Uint8Array | null> {
+    const artifact = this.artifacts.get(artifactId);
+    return artifact ? new Uint8Array(artifact.bytes) : null;
+  }
+
   async exportArtifact(
     artifactId: string,
     format: PresentationExportFormat,
@@ -609,6 +647,15 @@ export class PptMasterAdapter implements PresentationPort {
     try {
       const runner = this.requireRunner();
       workspace = await this.workspaceFactory(job.jobId);
+      if (!workspace) {
+        throw new PresentationError(
+          'PROVIDER_UNAVAILABLE',
+          'Workspace factory returned no workspace',
+          {
+            jobId: job.jobId,
+          },
+        );
+      }
       job.workspace = workspace;
       if (job.cancelRequested) return cloneJob(job);
 
@@ -627,6 +674,11 @@ export class PptMasterAdapter implements PresentationPort {
         timeoutMs: this.timeoutMs,
         maxOutputBytes: this.maxOutputBytes,
         shell: false,
+        inputArtifact: {
+          artifactId: `${job.jobId}:input`,
+          path: join(workspace.path, 'input.json'),
+          bytes: serializePresentationInput(job.input),
+        },
       });
       job.process = process;
       const result = await this.awaitProcess(process, job.jobId);
@@ -634,10 +686,31 @@ export class PptMasterAdapter implements PresentationPort {
       this.assertRunnerResult(result, job.jobId);
 
       const output = this.findPptxArtifact(result.artifacts, job.jobId);
-      const artifactId = `${job.jobId}:0`;
-      this.assertArtifactPath(workspace.path, output.path, job.jobId, artifactId);
-      this.storeArtifact(artifactId, 'pptx', output, this.now());
-      job.artifactIds = [artifactId];
+      const outputs = [
+        output,
+        ...(result.artifacts ?? []).filter((artifact) => artifact !== output),
+      ];
+      const createdAt = this.now();
+      const artifactIds: string[] = [];
+      const workspacePath = workspace.path;
+      outputs.forEach((artifact, index) => {
+        const artifactId = `${job.jobId}:${index}`;
+        this.assertArtifactPath(workspacePath, artifact.path, job.jobId, artifactId);
+        const format = isPptxZip(artifact.bytes)
+          ? 'pptx'
+          : artifact.type === 'svg' || artifact.path.toLowerCase().endsWith('.svg')
+            ? 'svg'
+            : undefined;
+        if (!format) return;
+        this.storeArtifact(artifactId, format, artifact, createdAt);
+        artifactIds.push(artifactId);
+      });
+      if (artifactIds.length === 0) {
+        throw new PresentationError('PPTX_INVALID', 'Runner did not return a valid PPTX artifact', {
+          jobId: job.jobId,
+        });
+      }
+      job.artifactIds = artifactIds;
       job.state = 'completed';
       job.error = undefined;
       job.updatedAt = this.now();
@@ -785,7 +858,14 @@ export class PptMasterAdapter implements PresentationPort {
       mimeType: output.mimeType ?? MIME_BY_FORMAT[format as PresentationExportFormat],
       sizeBytes: output.bytes.byteLength,
       status: 'ready',
-      uri: `memory://presentation/${encodeURIComponent(artifactId)}`,
+      // SVG previews are rendered directly by the browser. The kernel keeps
+      // the bytes in memory and exposes a data URI so the preview does not
+      // depend on an unimplemented `memory://` transport endpoint. PPTX
+      // downloads continue through the authenticated export route.
+      uri:
+        format === 'svg'
+          ? `data:image/svg+xml;base64,${Buffer.from(output.bytes).toString('base64')}`
+          : `memory://presentation/${encodeURIComponent(artifactId)}`,
       metadata: { sourcePath: output.path },
       createdAt: timestamp,
       updatedAt: timestamp,

@@ -1,17 +1,15 @@
 import { type ChildProcess, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import dotenv from 'dotenv';
 import dotenvExpand from 'dotenv-expand';
 import net from 'node:net';
 
 const env = process.env.NODE_ENV || 'development';
 
-const shellEnv = Object.entries(process.env).reduce<Record<string, string>>(
-  (acc, [key, value]) => {
-    if (typeof value === 'string') acc[key] = value;
-    return acc;
-  },
-  {},
-);
+const shellEnv = Object.entries(process.env).reduce<Record<string, string>>((acc, [key, value]) => {
+  if (typeof value === 'string') acc[key] = value;
+  return acc;
+}, {});
 const dotenvEnv: Record<string, string> = {};
 const dotenvResult = dotenv.config({
   override: true,
@@ -27,6 +25,33 @@ if (dotenvResult.parsed) {
 
   Object.assign(process.env, expanded.parsed, shellEnv);
 }
+
+/**
+ * Optionally expose the local image-generation relay to child dev processes.
+ *
+ * This file is intentionally outside the repository. Values already present
+ * in the environment (including an explicitly empty value) always win, so a
+ * developer can opt out or point at another provider without this bootstrap
+ * changing their configuration. Read failures are ignored to preserve the
+ * existing startup path on machines without the local skill configuration.
+ */
+const loadOptionalImagegenEnv = () => {
+  let parsed: Record<string, string>;
+
+  try {
+    parsed = dotenv.parse(readFileSync('/home/shiro/.codex/imagegen_o10.env', 'utf8'));
+  } catch {
+    return;
+  }
+
+  for (const key of ['OPENAI_BASE_URL', 'OPENAI_API_KEY']) {
+    if (Object.prototype.hasOwnProperty.call(process.env, key)) continue;
+    const value = parsed[key];
+    if (typeof value === 'string' && value.trim()) process.env[key] = value;
+  }
+};
+
+loadOptionalImagegenEnv();
 
 const NEXT_HOST = 'localhost';
 
@@ -94,7 +119,25 @@ const prewarmNextRootCompile = async () => {
   const startedAt = Date.now();
   const response = await fetch(NEXT_ROOT_URL, { signal: AbortSignal.timeout(120_000) });
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(2);
-  console.log(`✅ Next prewarm request finished (${response.status}) in ${elapsed}s ${NEXT_ROOT_URL}`);
+  console.log(
+    `✅ Next prewarm request finished (${response.status}) in ${elapsed}s ${NEXT_ROOT_URL}`,
+  );
+};
+
+/**
+ * Compile the Better Auth catch-all route before the browser can submit a login form.
+ *
+ * In dev mode Turbopack may briefly serve the global not-found page while a dynamic
+ * route is compiling. The sign-in page is usually ready first, so prewarming the
+ * session endpoint removes that cold-start race without creating a session or touching
+ * credentials.
+ */
+const prewarmAuthRoute = async () => {
+  const authUrl = `${NEXT_ROOT_URL}api/auth/get-session`;
+  const startedAt = Date.now();
+  const response = await fetch(authUrl, { signal: AbortSignal.timeout(120_000) });
+  const elapsed = ((Date.now() - startedAt) / 1000).toFixed(2);
+  console.log(`✅ Next auth prewarm finished (${response.status}) in ${elapsed}s ${authUrl}`);
 };
 
 const runNextBackgroundTasks = () => {
@@ -106,6 +149,7 @@ const runNextBackgroundTasks = () => {
     try {
       await waitForNextReady();
       await prewarmNextRootCompile();
+      await prewarmAuthRoute();
     } catch (error) {
       console.warn('⚠️ Next prewarm skipped:', error);
     }

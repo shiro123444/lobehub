@@ -5,6 +5,7 @@ import {
   Image,
   LibraryBigIcon,
   ListTodoIcon,
+  Presentation,
   Settings,
   ShapesIcon,
   Video,
@@ -88,6 +89,15 @@ export const NAVIGATION_ROUTES: NavigationRoute[] = [
     useDynamicTitle: true,
   },
   {
+    cmdkKey: 'cmdk.presentation',
+    electronKey: 'navigation.presentation',
+    icon: Presentation,
+    id: 'presentation',
+    keywords: ['presentation', 'ppt', 'slides', 'deck'],
+    path: '/presentation',
+    pathPrefix: '/presentation',
+  },
+  {
     cmdkKey: 'cmdk.memory',
     electronKey: 'navigation.memory',
     icon: BrainCircuit,
@@ -130,5 +140,5 @@ export const getRouteById = (id: string): NavigationRoute | undefined =>
  */
 export const getNavigableRoutes = (): NavigationRoute[] =>
   NAVIGATION_ROUTES.filter((r) =>
-    ['community', 'video', 'image', 'resource', 'page', 'memory'].includes(r.id),
+    ['community', 'video', 'image', 'resource', 'page', 'presentation', 'memory'].includes(r.id),
   );

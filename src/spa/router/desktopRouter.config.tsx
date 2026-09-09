@@ -657,6 +657,21 @@ export const desktopRoutes: RouteObject[] = [
         path: 'runtime',
       },
 
+      // PresentationStudio routes
+      {
+        children: [
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/presentation'),
+              'Desktop > Presentation > Studio',
+            ),
+            index: true,
+          },
+        ],
+        errorElement: <ErrorBoundary />,
+        path: 'presentation',
+      },
+
       // Default route - home page (handled by persistent layout)
       {
         index: true,

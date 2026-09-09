@@ -185,6 +185,7 @@ const routePrefetchMap: Record<string, () => Promise<unknown>> = {
   '/community': () => import('@/routes/(main)/community/_layout'),
   '/group': () => import('@/routes/(main)/group/_layout'),
   '/page': () => import('@/routes/(main)/page/_layout'),
+  '/presentation': () => import('@/routes/(main)/presentation'),
   '/resource': () => import('@/routes/(main)/resource/_layout'),
   '/settings': () => import('@/routes/(main)/settings/_layout'),
 };

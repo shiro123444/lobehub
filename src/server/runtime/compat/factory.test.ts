@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { RuntimeFacadePort } from '../adapter';
-import type { RuntimeFacadeFactoryResult } from '../factory';
+import type { RuntimeFacadeFactoryResult, RuntimeFacadeScope } from '../factory';
 import { createScopedLegacyAgentCompatAdapter } from './factory';
 import { configureRuntimeV1AgentOpsFlag, resetRuntimeV1AgentOpsFlag } from './feature-flag';
 import type { LegacyAgentOperationPort, LegacyAgentOperationView } from './types';
@@ -85,7 +85,7 @@ describe('C-29 scoped legacy agent compat construction', () => {
   it('flag off: lazily builds the legacy port with {userId, sessionId} and never touches the runtime factory', async () => {
     configureRuntimeV1AgentOpsFlag(false);
     const port = makeLegacyPort();
-    const legacyPortFactory = vi.fn(async () => port);
+    const legacyPortFactory = vi.fn(async (_scope: { userId: string; sessionId: string }) => port);
     const runtimeFacadeFactory = vi.fn(() => {
       throw new Error('runtime must not be touched while the flag is off');
     });
@@ -120,7 +120,7 @@ describe('C-29 scoped legacy agent compat construction', () => {
   it('flag on: lazily builds the runtime facade through the existing factory with the exact request scope and never touches legacy', async () => {
     configureRuntimeV1AgentOpsFlag(true);
     const facade = facadeReturningSnapshot();
-    const runtimeFacadeFactory = vi.fn(() => facade);
+    const runtimeFacadeFactory = vi.fn((_scope: RuntimeFacadeScope) => facade);
     const legacyPortFactory = vi.fn(() => {
       throw new Error('legacy must not be touched while the flag is on');
     });
@@ -146,7 +146,7 @@ describe('C-29 scoped legacy agent compat construction', () => {
       source: 'runtime.v1',
     });
     expect(runtimeFacadeFactory).toHaveBeenCalledTimes(1);
-    const factoryScope = runtimeFacadeFactory.mock.calls[0]?.[0] as Record<string, unknown>;
+    const factoryScope = runtimeFacadeFactory.mock.calls[0]?.[0];
     expect(factoryScope).toMatchObject({ userId: 'user-1', serverDB: scope.serverDB });
     expect(factoryScope.request).toBe(scope.request); // original object identity preserved
     expect(legacyPortFactory).not.toHaveBeenCalled();

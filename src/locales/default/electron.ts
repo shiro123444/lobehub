@@ -20,6 +20,7 @@ export default {
   'navigation.onboarding': 'Onboarding',
   'navigation.page': 'Page',
   'navigation.pages': 'Pages',
+  'navigation.presentation': 'PPT',
   'navigation.pin': 'Pin',
   'navigation.pinned': 'Pinned',
   'navigation.provider': 'Provider',

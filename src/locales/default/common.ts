@@ -219,6 +219,7 @@ export default {
   'cmdk.openSettings': 'Open Settings',
 
   'cmdk.pages': 'Pages',
+  'cmdk.presentation': 'PPT Studio',
 
   'cmdk.painting': 'Image',
 
@@ -519,6 +520,7 @@ export default {
   'tab.me': 'Me',
   'tab.memory': 'Memory',
   'tab.pages': 'Pages',
+  'tab.presentation': 'PPT',
   'tab.resource': 'Resources',
   'tab.search': 'Search',
   'tab.setting': 'Settings',

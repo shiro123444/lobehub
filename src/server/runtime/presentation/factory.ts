@@ -50,6 +50,7 @@ export const resetPresentationPortFactory = (): void => {
 /** The authenticated session context every cached resolution must carry. */
 export interface PresentationCachedSession {
   readonly request: Request;
+  readonly serverDB?: unknown;
   readonly sessionId: string;
   readonly userId: string;
 }
@@ -92,6 +93,17 @@ const requireRequest = (value: unknown): Request => {
   return value;
 };
 
+const requireSessionId = (value: unknown): string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new PresentationCacheError(
+      'PRESENTATION_CACHE_SCOPE_INVALID',
+      'sessionId must be a non-empty string',
+      'sessionId',
+    );
+  }
+  return value;
+};
+
 /**
  * Explicitly wraps an existing PresentationPortFactory with the C-23 scoped
  * cache. Nothing installs itself globally: callers decide where this binding
@@ -126,7 +138,7 @@ export const createScopedPresentationPortCache = (
               sessionId: scope.sessionId,
               request,
             })
-          : undefined,
+          : sessionContext?.serverDB,
       });
     },
   });
@@ -165,11 +177,12 @@ export const presentationPortFactoryFromScopeCache = (
     );
   }
   return async (factoryScope) => {
-    const sessionId = sessionIdFor(factoryScope.request);
+    const sessionId = requireSessionId(sessionIdFor(factoryScope.request));
     return await binding.resolve({
       userId: factoryScope.userId,
       sessionId,
       request: factoryScope.request,
+      serverDB: factoryScope.serverDB,
     });
   };
 };

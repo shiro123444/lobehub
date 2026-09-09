@@ -351,7 +351,7 @@ export const runtimeSelectors = {
     if (!s.activeRunId) return undefined;
     const events = s.eventsByRun[s.activeRunId];
     if (!events || events.length === 0) return undefined;
-    return events.at(-1).seq;
+    return events.at(-1)?.seq;
   },
   activeRun: (s: RuntimeStoreState): RunSnapshot | null =>
     s.activeRunId ? (s.runs[s.activeRunId] ?? null) : null,
@@ -364,7 +364,7 @@ export const runtimeSelectors = {
     (s: RuntimeStoreState): number | undefined => {
       const events = s.eventsByRun[runId];
       if (!events || events.length === 0) return undefined;
-      return events.at(-1).seq;
+      return events.at(-1)?.seq;
     },
   getPluginState:
     (id: string) =>

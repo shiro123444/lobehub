@@ -90,6 +90,16 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
 
     background: ${cssVar.colorBgContainer};
 
+    transition:
+      width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none !important;
+      animation: none !important;
+    }
+
     @media (width <= 768px) {
       width: 100%;
       min-width: 0;
@@ -97,6 +107,131 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
       height: auto;
       border-block-end: 1px solid ${cssVar.colorBorderSecondary};
       border-inline-end: none;
+    }
+  `,
+  sidebarCollapsed: css`
+    width: 52px !important;
+    min-width: 52px !important;
+    max-width: 52px !important;
+
+    @media (width <= 768px) {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+      height: 52px !important;
+    }
+  `,
+  collapsedBar: css`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding-block: 8px;
+    opacity: 1;
+    transform: scale(1);
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none !important;
+      animation: none !important;
+    }
+  `,
+  collapseButton: css`
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: ${cssVar.borderRadiusSM};
+
+    background: transparent;
+    color: ${cssVar.colorTextDescription};
+
+    outline: none;
+
+    transition:
+      background 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      background: ${cssVar.colorFillTertiary};
+      color: ${cssVar.colorText};
+    }
+
+    &:focus-visible {
+      outline: 2px solid ${cssVar.colorPrimary};
+      outline-offset: 1px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none !important;
+      animation: none !important;
+    }
+  `,
+  expandButton: css`
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid ${cssVar.colorBorderSecondary};
+    border-radius: ${cssVar.borderRadius};
+
+    background: ${cssVar.colorBgContainer};
+    color: ${cssVar.colorTextDescription};
+
+    outline: none;
+
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease,
+      background 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      background: ${cssVar.colorFillTertiary};
+      color: ${cssVar.colorText};
+    }
+
+    &:focus-visible {
+      outline: 2px solid ${cssVar.colorPrimary};
+      outline-offset: 1px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none !important;
+      animation: none !important;
+    }
+  `,
+  expandedContent: css`
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    opacity: 1;
+    transform: translateX(0);
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none !important;
+      animation: none !important;
     }
   `,
   time: css`

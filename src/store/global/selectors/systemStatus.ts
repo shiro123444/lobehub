@@ -53,6 +53,7 @@ const sidebarExpandedKeys = (s: GlobalState): string[] =>
 export const DEFAULT_SIDEBAR_ITEMS: string[] = [
   'tasks',
   'pages',
+  'presentation',
   'recents',
   'agent',
   'image',

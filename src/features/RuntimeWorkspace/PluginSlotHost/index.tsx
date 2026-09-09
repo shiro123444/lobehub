@@ -97,7 +97,7 @@ export const PluginSlotHost = memo<PluginSlotHostProps>(
             role="status"
           >
             <Flexbox horizontal align="center" gap={6}>
-              <Icon icon={Ban} size={{ fontSize: 14 }} />
+              <Icon icon={Ban} size={14} />
               <span>
                 Plugin {targetPluginId ? `"${targetPluginId}"` : ''} is currently {pluginState}.
               </span>
@@ -113,11 +113,7 @@ export const PluginSlotHost = memo<PluginSlotHostProps>(
 
         return (
           <div className={styles.emptyState} data-testid="slot-empty-state" role="status">
-            <Icon
-              icon={AlertCircle}
-              size={{ fontSize: 20 }}
-              style={{ marginBottom: 6, opacity: 0.5 }}
-            />
+            <Icon icon={AlertCircle} size={20} style={{ marginBottom: 6, opacity: 0.5 }} />
             <div>No component registered for slot: {slotId}</div>
           </div>
         );
@@ -149,7 +145,7 @@ export const PluginSlotHost = memo<PluginSlotHostProps>(
         {showHeader && (
           <div className={styles.header}>
             <Flexbox horizontal align="center" gap={6}>
-              <Icon icon={Layers} size={{ fontSize: 14 }} />
+              <Icon icon={Layers} size={14} />
               <span className={styles.slotId}>Slot: {slot?.title || slotId}</span>
             </Flexbox>
             <Flexbox horizontal align="center" gap={4}>

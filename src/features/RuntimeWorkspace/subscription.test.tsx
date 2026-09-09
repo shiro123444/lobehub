@@ -152,7 +152,7 @@ describe('RuntimeWorkspace SSE Subscription Lifecycle', () => {
     const subscribeRunMock = vi.fn().mockImplementation((runId, afterSeq, signal) => {
       // Store subscribeRun defaults afterSeq from last seq in eventsByRun
       const existing = useRuntimeStore.getState().eventsByRun[runId] ?? [];
-      const effectiveSeq = afterSeq ?? (existing.length > 0 ? existing.at(-1).seq : undefined);
+      const effectiveSeq = afterSeq ?? (existing.length > 0 ? existing.at(-1)?.seq : undefined);
       subscribedAfterSeq = effectiveSeq;
       return Promise.resolve();
     });

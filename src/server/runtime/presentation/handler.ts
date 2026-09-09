@@ -38,13 +38,12 @@ export type PresentationRouteOperation =
 export interface PresentationRouteMatch {
   readonly id?: string;
   readonly operation: PresentationRouteOperation;
+  readonly raw?: boolean;
 }
 
 export interface PresentationHttpResponse {
   readonly body: unknown;
-  readonly headers: {
-    readonly 'content-type': 'application/json';
-  };
+  readonly headers: Record<string, string>;
   readonly status: number;
 }
 
@@ -174,6 +173,14 @@ export const matchPresentationRoute = (request: Request): PresentationRouteMatch
   }
   if (segments.length === 2 && segments[0] === 'artifacts' && method === 'GET') {
     return { operation: 'getArtifact', id: segments[1] };
+  }
+  if (
+    segments.length === 3 &&
+    segments[0] === 'artifacts' &&
+    segments[2] === 'download' &&
+    method === 'GET'
+  ) {
+    return { id: segments[1], operation: 'getArtifact', raw: true };
   }
   if (
     segments.length === 2 &&
@@ -308,6 +315,25 @@ export const handlePresentationRequest = async (
     if (match.operation === 'cancel') return successResponse(await port.cancelJob(id));
     if (match.operation === 'retry') return successResponse(await port.retryJob(id));
     if (match.operation === 'getArtifact') {
+      const isRaw =
+        match.raw ||
+        request.headers.get('accept') === 'application/octet-stream' ||
+        new URL(request.url).searchParams.get('download') === 'true' ||
+        new URL(request.url).searchParams.get('raw') === 'true';
+
+      if (isRaw && typeof (port as any).getRawArtifact === 'function') {
+        const raw = await (port as any).getRawArtifact(id);
+        if (!raw || !raw.bytes) throw notFound('artifact', id);
+        return {
+          body: raw.bytes,
+          headers: {
+            'content-disposition': `attachment; filename="${encodeURIComponent(raw.name)}"`,
+            'content-type': raw.mimeType,
+          },
+          status: 200,
+        };
+      }
+
       const artifact = await port.getArtifact(id);
       if (!artifact) throw notFound('artifact', id);
       return successResponse(artifact as ArtifactSnapshot);

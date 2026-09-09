@@ -24,6 +24,7 @@
 
 import type {
   PresentationArgsBuilder,
+  PresentationBinaryPort,
   PresentationPort,
   PresentationRunner,
   PresentationWorkspaceFactory,
@@ -32,6 +33,39 @@ import {
   PptMasterAdapter,
   PresentationError,
 } from '../../../../packages/cordis-kernel/src/presentation';
+import type { PresentationPlanner } from '../../../../packages/runtime-contracts/src';
+import {
+  InMemoryPresentationArtifactStore,
+  type PresentationArtifactStore,
+} from './artifact-store';
+import {
+  createPresentationRuntimeComposition,
+  type PresentationGenerationContextFactory,
+  type PresentationRuntimeComposition,
+} from './composition';
+import type {
+  PresentationJobEventJournalLoader,
+  ScopedPresentationJobEventJournalCache,
+} from './event-journal-cache';
+import { createPresentationGenerationCapability } from './generation-capability';
+import type { ImageGenerationCapability } from './image-generation-capability';
+import { PresentationJobEventJournal } from './job-event-journal';
+import type { MultimodalChatPort } from './multimodal-chat-provider';
+import { createMultimodalPresentationPlanner } from './multimodal-planner';
+import { createPresentationGenerationPipeline } from './pipeline';
+import type {
+  ProductionPresentationProvider,
+  ProductionPresentationProviderOptions,
+  ProductionProviderReadiness,
+} from './production-command';
+import {
+  createProductionPresentationProvider,
+  resolveProviderReadiness,
+} from './production-command';
+import type { ProductionPresentationEnv } from './production-config';
+import { loadProductionPresentationProviderOptions } from './production-config';
+import { createProcessPresentationRunner, type ProcessPresentationRunnerOptions } from './runner';
+import { InMemoryPresentationPlanWorker, type PresentationWorkerWorkspace } from './worker';
 
 /** The authenticated scope every port resolution must carry. */
 export interface PptMasterPresentationScope {
@@ -74,10 +108,106 @@ export interface PptMasterPresentationPortBinding {
   /** Idempotent lifecycle hook; awaits the injected `onDispose` once. */
   dispose: () => Promise<void>;
   /** Kernel adapter delegate; carries the six port methods plus `dispose()`. */
-  readonly port: PresentationPort & { readonly dispose: () => Promise<void> };
+  readonly port: PresentationBinaryPort & { readonly dispose: () => Promise<void> };
   /** Echoes the authenticated scope the port was assembled for. */
   readonly scope: PptMasterPresentationScope;
 }
+
+/** Explicit runner assembly seam for a production provider command. */
+export type ProductionPresentationRunnerFactory = (
+  provider: ProductionPresentationProvider,
+) => PresentationRunner;
+
+export interface PptMasterProductionPortFactoryOptions extends Omit<
+  PptMasterPortFactoryOptions,
+  'allowedRunnerIds' | 'buildArgs' | 'provider' | 'runner'
+> {
+  /** Command/provider/allow-list configuration is never inferred. */
+  readonly productionProvider: ProductionPresentationProviderOptions;
+  /** Runner construction is injected so tests never spawn a real process. */
+  readonly runnerFactory: ProductionPresentationRunnerFactory;
+}
+
+export interface PptMasterProductionPresentationCompositionOptions extends Omit<
+  PptMasterPortFactoryOptions,
+  'allowedRunnerIds' | 'buildArgs' | 'provider' | 'runner'
+> {
+  /** Explicit deployment environment; process.env is never read here. */
+  readonly env: ProductionPresentationEnv;
+  /** Creates the injected runner; the composition never calls spawn(). */
+  readonly runnerFactory: ProductionPresentationRunnerFactory;
+}
+
+export interface PptMasterProductionPresentationComposition {
+  /** Resolves an independent PresentationPort binding for each authenticated scope. */
+  readonly portFactory: (scope: PptMasterPresentationScope) => PptMasterPresentationPortBinding;
+  /** Safe C-73 projection; command and secret-bearing options stay private. */
+  readonly readiness: ProductionProviderReadiness;
+}
+
+export type PptMasterProductionCompositionOptions =
+  PptMasterProductionPresentationCompositionOptions;
+export type PptMasterProductionComposition = PptMasterProductionPresentationComposition;
+
+/** Options for the real JSONL ppt-master worker adapter. */
+export interface PptMasterProcessRunnerFactoryOptions extends Omit<
+  ProcessPresentationRunnerOptions,
+  'command' | 'commandArgs' | 'id' | 'stdinBuilder'
+> {
+  /** Absolute ppt-master checkout consumed by the external worker. */
+  readonly pptMasterRoot: string;
+}
+
+/**
+ * Builds a production runner factory from an already validated provider.
+ * The provider command remains argv-only; the worker payload is sent through
+ * stdin only when a job is actually spawned. No process is started here.
+ */
+export const createPptMasterProcessRunnerFactory = (
+  options: PptMasterProcessRunnerFactoryOptions,
+): ProductionPresentationRunnerFactory => {
+  if (!nonEmptyString(options?.pptMasterRoot)) {
+    throw invalid('pptMasterRoot must be a non-empty string', 'pptMasterRoot');
+  }
+  return (provider) =>
+    createProcessPresentationRunner({
+      ...options,
+      id: provider.runnerId ?? provider.provider ?? 'ppt-master-runner',
+      command: provider.command,
+      commandArgs: provider.commandArgs,
+      stdinBuilder: async (request) => {
+        let input: Record<string, unknown> = {};
+        if (request.inputArtifact) {
+          try {
+            const decoded = new TextDecoder().decode(request.inputArtifact.bytes);
+            const parsed: unknown = JSON.parse(decoded);
+            if (isRecord(parsed)) input = parsed;
+          } catch {
+            throw new PresentationError(
+              'PRESENTATION_INVALID',
+              'input artifact is not valid JSON',
+              {
+                jobId: request.jobId,
+                path: 'inputArtifact',
+              },
+            );
+          }
+        }
+        const payload = {
+          ...input,
+          jobId: request.jobId,
+          projectDir: request.cwd,
+          // The checkout path is deployment-owned; never accept it from the
+          // client-provided PresentationJobInput.options object.
+          pptMasterRoot: options.pptMasterRoot,
+          aspectRatio: input.aspectRatio ?? '16:9',
+          slides: input.slideCount ?? 1,
+          prompt: input.prompt ?? input.title ?? '清舟演示文稿',
+        };
+        return `${JSON.stringify(payload)}\n`;
+      },
+    });
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -191,10 +321,166 @@ export const createPptMasterPresentationPortFactory = (
       cancelJob: adapter.cancelJob.bind(adapter),
       retryJob: adapter.retryJob.bind(adapter),
       getArtifact: adapter.getArtifact.bind(adapter),
+      readArtifactBytes: adapter.readArtifactBytes.bind(adapter),
       exportArtifact: adapter.exportArtifact.bind(adapter),
       dispose,
-    } as PresentationPort & { readonly dispose: () => Promise<void> };
+    } as PresentationBinaryPort & { readonly dispose: () => Promise<void> };
 
     return { port, scope, dispose };
   };
+};
+
+/**
+ * Connect the explicit C-40 provider command seam to the kernel adapter. The
+ * runner factory receives command argv, buildArgs and allow-list as one
+ * immutable provider descriptor; this function itself never invokes spawn.
+ */
+export const createPptMasterProductionPresentationPortFactory = (
+  options: PptMasterProductionPortFactoryOptions,
+): ((scope: PptMasterPresentationScope) => PptMasterPresentationPortBinding) => {
+  const provider = createProductionPresentationProvider(options.productionProvider);
+  if (!provider.available) {
+    return () => {
+      throw new PresentationError('PROVIDER_UNAVAILABLE', 'Production provider is not configured');
+    };
+  }
+  const runner = options.runnerFactory(provider);
+  return createPptMasterPresentationPortFactory({
+    ...options,
+    provider: provider.provider!,
+    runner,
+    allowedRunnerIds: provider.allowedRunnerIds,
+    buildArgs: provider.buildArgs,
+  });
+};
+
+/**
+ * Compose C-75 configuration with the existing C-33/C-40 production factory.
+ * All environment values and runner/workspace dependencies are explicit; no
+ * process state, request headers, database, or runner process is consulted at
+ * composition time.
+ */
+export const createPptMasterProductionPresentationComposition = (
+  options: PptMasterProductionPresentationCompositionOptions,
+): PptMasterProductionPresentationComposition => {
+  if (!options || typeof options !== 'object') {
+    throw invalid('Production presentation composition options are required', 'options');
+  }
+  if (typeof options.runnerFactory !== 'function') {
+    throw invalid('runnerFactory must be a function', 'runnerFactory');
+  }
+
+  const productionProvider = loadProductionPresentationProviderOptions(options.env);
+  const readiness = resolveProviderReadiness(productionProvider);
+  const portFactory = createPptMasterProductionPresentationPortFactory({
+    ...options,
+    productionProvider,
+    runnerFactory: options.runnerFactory,
+  });
+
+  return { portFactory, readiness };
+};
+
+/** Short alias for callers using the generic production composition name. */
+export const createPptMasterProductionComposition =
+  createPptMasterProductionPresentationComposition;
+
+export interface ProductionPresentationGenerationCompositionOptions {
+  readonly artifactStore?: PresentationArtifactStore;
+  readonly contextFactory?: PresentationGenerationContextFactory;
+  readonly defaultSlideCount?: number;
+  readonly env?: ProductionPresentationEnv;
+  readonly imageGenerationCapability?: ImageGenerationCapability;
+  readonly journalCache?: ScopedPresentationJobEventJournalCache;
+  readonly journalLoader?: PresentationJobEventJournalLoader;
+  readonly multimodalChatPort?: MultimodalChatPort;
+  readonly now?: () => string;
+  readonly planner?: PresentationPlanner;
+  readonly runnerFactory?: (provider: ProductionPresentationProvider) => PresentationRunner;
+  readonly worker?: Pick<InMemoryPresentationPlanWorker, 'run'>;
+  readonly workspaceFactory?: (jobId: string) => PresentationWorkerWorkspace;
+}
+
+export interface ProductionPresentationGenerationComposition {
+  readonly composition: PresentationRuntimeComposition;
+  readonly readiness: ProductionProviderReadiness;
+}
+
+/**
+ * Compose production generation capabilities including the multimodal planner,
+ * image generation, artifact persistence, and execution pipeline.
+ *
+ * Guarantees:
+ * - Pure assembly, zero side-effects at creation (no env reading, no spawn, no network).
+ * - Per-scope generation port isolation.
+ * - Missing provider fails with PROVIDER_UNAVAILABLE.
+ */
+export const createProductionPresentationGenerationComposition = (
+  options: ProductionPresentationGenerationCompositionOptions,
+): ProductionPresentationGenerationComposition => {
+  if (!options || typeof options !== 'object') {
+    throw invalid('Production presentation generation composition options are required', 'options');
+  }
+
+  const planner =
+    options.planner ??
+    (options.multimodalChatPort
+      ? createMultimodalPresentationPlanner({
+          chatPort: options.multimodalChatPort,
+          defaultSlideCount: options.defaultSlideCount,
+        })
+      : undefined);
+
+  const worker = options.worker ?? new InMemoryPresentationPlanWorker();
+  const artifactStore =
+    options.artifactStore ??
+    new InMemoryPresentationArtifactStore(options.now ? () => options.now!() : undefined);
+
+  const pipeline = planner
+    ? createPresentationGenerationPipeline(planner, worker, {
+        ...(options.now ? { now: options.now } : {}),
+      })
+    : undefined;
+
+  const contextFactory: PresentationGenerationContextFactory =
+    options.contextFactory ??
+    ((jobId: string) => ({
+      plannerContext: {},
+      workerContext: {
+        convert: async () => [],
+        jobId,
+        qualityCheck: async () => ({ passed: true }),
+        workspace: options.workspaceFactory
+          ? options.workspaceFactory(jobId)
+          : { path: `/tmp/presentation-${jobId}`, write: async () => {} },
+      },
+    }));
+
+  const productionProvider = loadProductionPresentationProviderOptions(options.env ?? {});
+  const readiness = resolveProviderReadiness(productionProvider);
+
+  const capability =
+    readiness.state === 'configured' && pipeline
+      ? createPresentationGenerationCapability(pipeline, artifactStore)
+      : undefined;
+
+  const journalLoader =
+    options.journalCache === undefined && options.journalLoader === undefined
+      ? async () => new PresentationJobEventJournal()
+      : options.journalLoader;
+
+  const composition = createPresentationRuntimeComposition({
+    ...(capability ? { capability } : {}),
+    contextFactory,
+    generationArtifactStore: artifactStore,
+    ...(options.imageGenerationCapability
+      ? { imageGenerationCapability: options.imageGenerationCapability }
+      : {}),
+    ...(options.journalCache ? { journalCache: options.journalCache } : {}),
+    ...(journalLoader ? { journalLoader } : {}),
+    ...(options.multimodalChatPort ? { multimodalChatPort: options.multimodalChatPort } : {}),
+    ...(options.now ? { now: options.now } : {}),
+  });
+
+  return { composition, readiness };
 };

@@ -54,7 +54,7 @@ export const Header = memo(() => {
       role="banner"
     >
       <Flexbox horizontal align="center" gap={12}>
-        <Icon icon={Activity} size={{ fontSize: 18 }} />
+        <Icon icon={Activity} size={18} />
         <span className={styles.title}>Cordis Runtime Workspace</span>
         {activeRun && (
           <div className={styles.meta}>
@@ -69,7 +69,7 @@ export const Header = memo(() => {
           <Button
             danger
             aria-label={`Cancel active run ${activeRun?.runId || ''}`}
-            icon={<Icon icon={Square} size={{ fontSize: 12 }} />}
+            icon={<Icon icon={Square} size={12} />}
             size="small"
             onClick={handleCancel}
           >
@@ -86,7 +86,7 @@ export const Header = memo(() => {
         >
           <Icon
             icon={Radio}
-            size={{ fontSize: 14 }}
+            size={14}
             style={{ color: isRunning ? 'var(--color-primary)' : 'inherit' }}
           />
           <span style={{ fontSize: 12, opacity: 0.7 }}>

@@ -95,6 +95,11 @@ export interface ChatInputProps {
    */
   onEditorReady?: (editor: any) => void;
   /**
+   * Placeholder text for the native editor. Kept here so domain surfaces can
+   * reuse the exact conversation shell while changing only their copy.
+   */
+  placeholder?: string;
+  /**
    * Right action buttons configuration
    */
   rightActions?: ActionKeys[];
@@ -146,6 +151,7 @@ const ChatInput = memo<ChatInputProps>(
     extraActionItems,
     isConfigLoading = false,
     mentionItems,
+    placeholder,
     runtimeConfigSlot,
     sendMenu,
     sendAreaPrefix,
@@ -326,6 +332,7 @@ const ChatInput = memo<ChatInputProps>(
               isConfigLoading={isConfigLoading}
               leftContent={leftContent}
               placeholderVariant={placeholderVariant}
+              placeholder={placeholder}
               runtimeConfigSlot={runtimeConfigSlot}
               sendAreaPrefix={sendAreaPrefix}
               showRuntimeConfig={showRuntimeConfig}

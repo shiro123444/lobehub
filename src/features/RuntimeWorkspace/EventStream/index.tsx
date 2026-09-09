@@ -21,7 +21,7 @@ export const EventStream = memo(() => {
         role="region"
       >
         <div className={styles.emptyState}>
-          <Icon icon={Inbox} size={{ fontSize: 36 }} style={{ marginBottom: 12, opacity: 0.5 }} />
+          <Icon icon={Inbox} size={36} style={{ marginBottom: 12, opacity: 0.5 }} />
           <div style={{ fontSize: 14, fontWeight: 500 }}>No Active Run Selected</div>
           <div style={{ fontSize: 12, marginTop: 4 }}>
             Select a run from the sidebar to inspect its lifecycle events and live state.
@@ -46,7 +46,7 @@ export const EventStream = memo(() => {
       <div className={styles.metaCard}>
         <Flexbox horizontal align="center" justify="space-between" style={{ marginBottom: 6 }}>
           <Flexbox horizontal align="center" gap={8}>
-            <Icon icon={Terminal} size={{ fontSize: 16 }} />
+            <Icon icon={Terminal} size={16} />
             <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{activeRun.runId}</span>
             <Tag
               color={
@@ -98,11 +98,7 @@ export const EventStream = memo(() => {
       >
         {activeEvents.length === 0 ? (
           <div className={styles.emptyState}>
-            <Icon
-              icon={AlertCircle}
-              size={{ fontSize: 24 }}
-              style={{ marginBottom: 8, opacity: 0.4 }}
-            />
+            <Icon icon={AlertCircle} size={24} style={{ marginBottom: 8, opacity: 0.4 }} />
             <div>
               {isRunning
                 ? 'Run is starting. Waiting for incoming events...'

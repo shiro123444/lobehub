@@ -97,6 +97,20 @@ describe('C-25 scoped presentation cache factory integration', () => {
     });
   });
 
+  it('preserves an authenticated serverDB through the scoped cache without a resolver', async () => {
+    const baseFactory = vi.fn((_scope) => makePort());
+    const binding = createScopedPresentationPortCache({ factory: baseFactory });
+    const serverDB = { handle: 'authenticated-db' };
+
+    await binding.resolve({ ...session(), serverDB });
+
+    expect(baseFactory.mock.calls[0]?.[0]).toMatchObject({
+      userId: 'user-1',
+      sessionId: 'session-1',
+      serverDB,
+    });
+  });
+
   it('rejects invalid or missing Request with a stable code before any provider contact', async () => {
     const baseFactory = vi.fn(() => makePort());
     const binding = createScopedPresentationPortCache({ factory: baseFactory });

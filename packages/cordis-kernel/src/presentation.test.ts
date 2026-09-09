@@ -8,7 +8,7 @@ import type {
   PresentationRunnerResult,
   PresentationWorkspace,
 } from './index';
-import { PptMasterAdapter } from './index';
+import { PptMasterAdapter, serializePresentationInput } from './index';
 
 const input: PresentationJobInput = {
   notebookId: 'notebook-1',
@@ -129,6 +129,28 @@ const adapterFor = (bundle: MockRunnerBundle, timeoutMs = 100): PptMasterAdapter
 };
 
 describe('@lobechat/cordis-kernel PptMasterAdapter', () => {
+  it('passes stable UTF-8 input.json to create runners without putting JSON in argv', async () => {
+    const bundle = mockRunner();
+    const adapter = adapterFor(bundle);
+    const reordered: PresentationJobInput = {
+      sourceVersionIds: ['version-1'],
+      title: 'Runtime presentation',
+      notebookId: 'notebook-1',
+      options: { z: 2, a: 1 },
+    };
+
+    await adapter.createJob(reordered);
+    const request = bundle.requests[0]!;
+    expect(request.inputArtifact?.path).toBe('/tmp/herdr-presentation/job-1/input.json');
+    expect(new TextDecoder().decode(request.inputArtifact?.bytes)).toBe(
+      '{"notebookId":"notebook-1","options":{"a":1,"z":2},"sourceVersionIds":["version-1"],"title":"Runtime presentation"}',
+    );
+    expect(request.args).not.toContain('--input-json');
+    expect(request.args).not.toContain(expect.stringContaining('Runtime presentation'));
+    expect(request.shell).toBe(false);
+    expect(request.inputArtifact?.bytes).toEqual(serializePresentationInput(reordered));
+  });
+
   it('rejects createJob with PROVIDER_UNAVAILABLE when runner/provider is absent', async () => {
     const adapter = new PptMasterAdapter({ idFactory: () => 'job-unconfigured' });
 
@@ -158,6 +180,42 @@ describe('@lobechat/cordis-kernel PptMasterAdapter', () => {
     });
     expect(Array.isArray(bundle.requests[0]?.args)).toBe(true);
     expect(bundle.workspaces[0]?.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('keeps provider SVG previews alongside the PPTX artifact', async () => {
+    const bundle = mockRunner([
+      {
+        ...resultFor(),
+        artifacts: [
+          resultFor().artifacts![0]!,
+          { path: 'preview/slide_01.svg', bytes: bytesFor('<svg/>'), type: 'svg' },
+        ],
+      },
+    ]);
+    const adapter = adapterFor(bundle);
+
+    const job = await adapter.createJob(input);
+
+    expect(job).toMatchObject({ state: 'completed', artifactIds: ['job-1:0', 'job-1:1'] });
+    await expect(adapter.getArtifact('job-1:1')).resolves.toMatchObject({
+      type: 'svg',
+      mimeType: 'image/svg+xml',
+      status: 'ready',
+      uri: expect.stringMatching(/^data:image\/svg\+xml;base64,/),
+    });
+  });
+
+  it('exposes artifact bytes through a defensive-copy server-only seam', async () => {
+    const bundle = mockRunner();
+    const adapter = adapterFor(bundle);
+    await adapter.createJob(input);
+
+    const bytes = await adapter.readArtifactBytes('job-1:0');
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes).toEqual(validPptx);
+    if (bytes) bytes[0] = 0xff;
+    await expect(adapter.readArtifactBytes('job-1:0')).resolves.toEqual(validPptx);
+    await expect(adapter.readArtifactBytes('missing')).resolves.toBeNull();
   });
 
   it('uses an independent workspace and argument array for every job', async () => {

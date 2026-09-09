@@ -30,9 +30,9 @@ export const RunComposer = memo<RunComposerProps>(
 
       const trimmedMessage = userMessage.trim();
       const input: StartRunInput = {
-        profileId: profileId.trim() || undefined,
-        sessionId: sessionId.trim() || undefined,
-        userMessage: trimmedMessage || undefined,
+        profileId: profileId.trim(),
+        sessionId: sessionId.trim(),
+        userMessage: trimmedMessage,
       };
 
       setLoading(true);
@@ -135,7 +135,7 @@ export const RunComposer = memo<RunComposerProps>(
           <Button
             aria-label="Reset form"
             disabled={loading}
-            icon={<Icon icon={RotateCcw} size={{ fontSize: 13 }} />}
+            icon={<Icon icon={RotateCcw} size={13} />}
             size="small"
             onClick={handleReset}
           >
@@ -144,7 +144,7 @@ export const RunComposer = memo<RunComposerProps>(
           <Button
             aria-busy={loading}
             aria-label="Start Run"
-            icon={<Icon icon={loading ? Send : Play} size={{ fontSize: 13 }} />}
+            icon={<Icon icon={loading ? Send : Play} size={13} />}
             loading={loading}
             type="primary"
             onClick={handleSubmit}

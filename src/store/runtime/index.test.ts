@@ -14,7 +14,9 @@ describe('RuntimeStore', () => {
   const createMockClient = (overrides: Partial<RuntimeClient> = {}): RuntimeClient => ({
     cancelPresentationJob: vi.fn().mockResolvedValue({} as any),
     cancelRun: vi.fn().mockResolvedValue(undefined),
+    createImageGeneration: vi.fn().mockResolvedValue({ jobId: 'job-1', slots: [] }),
     createPresentationJob: vi.fn().mockResolvedValue({} as any),
+    downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
     exportArtifact: vi.fn().mockResolvedValue({} as any),
     getArtifact: vi.fn().mockResolvedValue(null),
     getPresentationJob: vi.fn().mockResolvedValue(null),
@@ -40,6 +42,11 @@ describe('RuntimeStore', () => {
         session_id: 'session-1',
         type: 'run_state',
       } as RuntimeEvent;
+    }),
+    // The C-62 presentation job stream; run-store tests don't consume events,
+    // so an empty generator keeps the seam structurally complete.
+    subscribePresentationJob: vi.fn().mockImplementation(async function* () {
+      yield;
     }),
     unmountPlugin: vi.fn().mockResolvedValue('disabled'),
     ...overrides,

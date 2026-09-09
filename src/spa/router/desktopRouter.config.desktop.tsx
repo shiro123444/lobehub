@@ -71,6 +71,7 @@ import MemoryPreferencesPage from '@/routes/(main)/memory/preferences';
 import PageIndexPage from '@/routes/(main)/page';
 import DesktopPageLayout from '@/routes/(main)/page/_layout';
 import PageDetailPage from '@/routes/(main)/page/[id]';
+import PresentationPage from '@/routes/(main)/presentation';
 import ResourceLayout from '@/routes/(main)/resource/_layout';
 import ResourceHomePage from '@/routes/(main)/resource/(home)';
 import ResourceHomeLayout from '@/routes/(main)/resource/(home)/_layout';
@@ -526,6 +527,18 @@ export const desktopRoutes: RouteObject[] = [
         ],
         errorElement: <ErrorBoundary />,
         path: 'runtime',
+      },
+
+      // PresentationStudio routes
+      {
+        children: [
+          {
+            element: <PresentationPage />,
+            index: true,
+          },
+        ],
+        errorElement: <ErrorBoundary />,
+        path: 'presentation',
       },
 
       // Default route - home page (handled by persistent layout)

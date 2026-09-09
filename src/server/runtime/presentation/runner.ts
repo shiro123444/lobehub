@@ -63,6 +63,10 @@ export interface PresentationChildProcessPort {
   readonly startError: Promise<unknown | undefined>;
   readonly stderr: AsyncIterable<Uint8Array>;
   readonly stdout: AsyncIterable<Uint8Array>;
+  /** Optional stdin writer used by JSONL workers; absent for argv-only fakes. */
+  readonly stdin?: {
+    end: (input?: string | Uint8Array) => void;
+  };
 }
 
 /** Launcher surface; inject a fake in tests, defaults to node:child_process. */
@@ -87,6 +91,10 @@ export interface ProcessPresentationRunnerOptions {
   /** Configurable runner id (surfaced to the kernel's allow-list). */
   readonly id?: string;
   readonly launcher?: PresentationProcessLauncherPort;
+  /** Optional JSONL/stdin payload builder, evaluated only after spawn. */
+  readonly stdinBuilder?: (
+    request: PresentationRunnerRequest,
+  ) => string | Uint8Array | Promise<string | Uint8Array>;
   /** Upper bound on collected artifacts (default 32). */
   readonly maxArtifacts?: number;
 }
@@ -170,6 +178,33 @@ const concatBytes = (chunks: readonly Uint8Array[]): Uint8Array => {
 const decodeUtf8 = (bytes: Uint8Array): string =>
   new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 
+/** Recursively discover provider artifacts while retaining workspace bounds. */
+const findArtifacts = async (
+  fsPort: PresentationRunnerFsPort,
+  root: string,
+): Promise<readonly string[]> => {
+  const found: string[] = [];
+  const visit = async (relativeDir: string): Promise<void> => {
+    const absoluteDir = relativeDir ? pathResolve(root, relativeDir) : pathResolve(root);
+    let entries: readonly string[];
+    try {
+      entries = await fsPort.readdir(absoluteDir);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const relativePath = relativeDir ? `${relativeDir}/${entry}` : entry;
+      if (/\.(?:pptx|svg)$/i.test(entry)) {
+        found.push(relativePath);
+        continue;
+      }
+      await visit(relativePath);
+    }
+  };
+  await visit('');
+  return found.sort();
+};
+
 // ---------------------------------------------------------------------------
 // Production default ports
 // ---------------------------------------------------------------------------
@@ -178,7 +213,9 @@ const defaultFsPort: PresentationRunnerFsPort = {
   writeFile: (path, bytes) => writeFile(path, bytes),
   readFile: (path) => readFile(path),
   readdir: (path) => readdir(path),
-  mkdir: (path) => mkdir(path, { recursive: true }),
+  mkdir: async (path) => {
+    await mkdir(path, { recursive: true });
+  },
 };
 
 class NodeChildProcessPort implements PresentationChildProcessPort {
@@ -186,6 +223,7 @@ class NodeChildProcessPort implements PresentationChildProcessPort {
   readonly stderr: AsyncIterable<Uint8Array>;
   readonly exit: Promise<{ readonly code: number | null; readonly signal: string | null }>;
   readonly startError: Promise<unknown | undefined>;
+  readonly stdin: { end: (input?: string | Uint8Array) => void };
   private readonly child: ReturnType<typeof spawn>;
   private killed = false;
 
@@ -194,7 +232,7 @@ class NodeChildProcessPort implements PresentationChildProcessPort {
       cwd,
       shell,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     const toChunks = async function* (stream: NodeJS.ReadableStream): AsyncGenerator<Uint8Array> {
       for await (const chunk of stream) {
@@ -205,6 +243,18 @@ class NodeChildProcessPort implements PresentationChildProcessPort {
     };
     this.stdout = toChunks(this.child.stdout!);
     this.stderr = toChunks(this.child.stderr!);
+    this.stdin = {
+      end: (input) => {
+        if (!this.child.stdin || this.child.stdin.destroyed) return;
+        this.child.stdin.end(
+          input === undefined
+            ? undefined
+            : input instanceof Uint8Array
+              ? Buffer.from(input)
+              : input,
+        );
+      },
+    };
     this.exit = new Promise((resolveExit) => {
       // 'close' fires after stdio flushes; a spawn failure resolves honestly
       // with nulls instead of hanging the runner.
@@ -230,7 +280,7 @@ class NodeChildProcessPort implements PresentationChildProcessPort {
       }
     }
     try {
-      this.child.kill(signal);
+      this.child.kill(signal as NodeJS.Signals);
     } catch {
       // Already exited; cancellation remains idempotent.
     }
@@ -316,6 +366,16 @@ export function createProcessPresentationRunner(
               cause,
             });
           }
+          if (options.stdinBuilder) {
+            if (!child.stdin) {
+              throw new PresentationError('PPT_MASTER_FAILED', 'Runner does not expose stdin', {
+                jobId,
+                path: 'stdin',
+              });
+            }
+            const payload = await options.stdinBuilder(request);
+            child.stdin.end(payload);
+          }
           // A cancel() that raced ahead of spawn still terminates the group.
           if (cancelled) killChild();
 
@@ -374,7 +434,7 @@ export function createProcessPresentationRunner(
           const declared = (
             options.declareArtifacts
               ? options.declareArtifacts(request)
-              : (await fsPort.readdir(cwd)).filter((name) => /\.(?:pptx|svg)$/i.test(name)).sort()
+              : await findArtifacts(fsPort, cwd)
           ).slice(0, maxArtifacts);
 
           const artifacts: PresentationRunnerArtifact[] = [];

@@ -1,0 +1,35 @@
+import type {
+  ArtifactSnapshot,
+  PresentationExportFormat,
+  PresentationJob,
+} from '../../../../packages/runtime-contracts/src/index';
+import type { PresentationSlotState } from '../store/presentationStore';
+
+export type CompletedViewMode = 'focus' | 'lightbox';
+
+export interface CompletedWorkspaceProps {
+  canExport: boolean;
+  creating?: boolean;
+  defaultLanguage?: string;
+  defaultNotebookId?: string;
+  defaultSourceVersionIds?: string[];
+  dismissSlotError: (jobId: string, slideId: string, slotId: string) => void;
+  effectiveSelectedArtifactId: string | null;
+  exported: { artifactId: string; format: PresentationExportFormat; uri?: string } | null;
+  exporting: boolean | string | null;
+  jobTitles: Record<string, string>;
+  onAiModify: (prompt: string) => Promise<void>;
+  onExport: (artifactId: string, format: PresentationExportFormat) => void;
+  onRetryJob: (jobId: string) => void;
+  onSelectArtifact: (artifactId: string) => void;
+  resolveArtifactUri?: (artifactId: string) => string | undefined;
+  retryPendingKeys: Record<string, boolean>;
+  retrySlot: (jobId: string, slideId: string, slotId: string) => Promise<void>;
+  selectedJob: PresentationJob;
+  selectedJobArtifacts: ArtifactSnapshot[];
+  selectedJobSlots: PresentationSlotState[];
+  selectedSlide: ArtifactSnapshot | null;
+  showAnnotationBar?: boolean;
+  showInspector?: boolean;
+  slideArtifacts: ArtifactSnapshot[];
+}

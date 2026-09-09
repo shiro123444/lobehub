@@ -130,6 +130,7 @@ describe('systemStatusSelectors', () => {
         'agent',
         'recents',
         'pages',
+        'presentation',
         'tasks',
         'image',
         'community',
@@ -165,6 +166,7 @@ describe('systemStatusSelectors', () => {
       expect(items).toEqual([
         'tasks',
         'pages',
+        'presentation',
         'agent',
         'recents',
         'image',

@@ -176,8 +176,8 @@ describe('RunComposer Component', () => {
 
     await waitFor(() => {
       expect(startRunMock).toHaveBeenCalledWith({
-        profileId: undefined,
-        sessionId: undefined,
+        profileId: '',
+        sessionId: '',
         userMessage: 'Shortcut message',
       });
     });

@@ -120,11 +120,7 @@ export const PresentationPanel = memo<PresentationPanelProps>(
           role="region"
         >
           <div className={styles.emptyState}>
-            <Icon
-              icon={Presentation}
-              size={{ fontSize: 32 }}
-              style={{ marginBottom: 8, opacity: 0.4 }}
-            />
+            <Icon icon={Presentation} size={32} style={{ marginBottom: 8, opacity: 0.4 }} />
             <div style={{ fontWeight: 500 }}>No Active Presentation Job</div>
             <div style={{ fontSize: 12, marginTop: 4 }}>
               Start a presentation strategy run or job to view slide generation progress and
@@ -151,25 +147,25 @@ export const PresentationPanel = memo<PresentationPanelProps>(
 
     const exportMenuItems: MenuProps['items'] = [
       {
-        icon: <Icon icon={FileSpreadsheet} size={{ fontSize: 13 }} />,
+        icon: <Icon icon={FileSpreadsheet} size={13} />,
         key: 'pptx',
         label: 'Export PowerPoint (.pptx)',
         onClick: () => selectedArtifact && onExport?.(selectedArtifact.artifactId, 'pptx'),
       },
       {
-        icon: <Icon icon={FileText} size={{ fontSize: 13 }} />,
+        icon: <Icon icon={FileText} size={13} />,
         key: 'pdf',
         label: 'Export Document (.pdf)',
         onClick: () => selectedArtifact && onExport?.(selectedArtifact.artifactId, 'pdf'),
       },
       {
-        icon: <Icon icon={Layers} size={{ fontSize: 13 }} />,
+        icon: <Icon icon={Layers} size={13} />,
         key: 'svg',
         label: 'Export Vector Slides (.svg)',
         onClick: () => selectedArtifact && onExport?.(selectedArtifact.artifactId, 'svg'),
       },
       {
-        icon: <Icon icon={FileText} size={{ fontSize: 13 }} />,
+        icon: <Icon icon={FileText} size={13} />,
         key: 'quality-report',
         label: 'Export Quality Report',
         onClick: () =>
@@ -187,7 +183,7 @@ export const PresentationPanel = memo<PresentationPanelProps>(
       >
         <div className={styles.header}>
           <Flexbox horizontal align="center" gap={8}>
-            <Icon icon={Presentation} size={{ fontSize: 16 }} />
+            <Icon icon={Presentation} size={16} />
             <span className={styles.title}>Presentation Job</span>
             <span className={styles.jobId}>({job.jobId})</span>
           </Flexbox>
@@ -310,7 +306,7 @@ export const PresentationPanel = memo<PresentationPanelProps>(
               danger
               aria-label="Cancel Presentation Job"
               disabled={!canCancel}
-              icon={<Icon icon={Square} size={{ fontSize: 12 }} />}
+              icon={<Icon icon={Square} size={12} />}
               loading={cancelling}
               size="small"
               onClick={handleCancel}
@@ -323,7 +319,7 @@ export const PresentationPanel = memo<PresentationPanelProps>(
             <Button
               aria-label="Retry Presentation Job"
               disabled={!canRetry}
-              icon={<Icon icon={RefreshCw} size={{ fontSize: 12 }} />}
+              icon={<Icon icon={RefreshCw} size={12} />}
               loading={retrying}
               size="small"
               onClick={handleRetry}
@@ -341,7 +337,7 @@ export const PresentationPanel = memo<PresentationPanelProps>(
               <Button
                 aria-label="Export Presentation Artifact"
                 disabled={!canExport}
-                icon={<Icon icon={Download} size={{ fontSize: 13 }} />}
+                icon={<Icon icon={Download} size={13} />}
                 loading={exporting}
                 size="small"
                 type="primary"

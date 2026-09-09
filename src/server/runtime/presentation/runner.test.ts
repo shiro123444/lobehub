@@ -6,8 +6,8 @@ import type {
   PresentationChildProcessPort,
   PresentationProcessLauncherPort,
   PresentationRunnerFsPort,
-  PresentationRunnerRequest,
 } from './runner';
+import type { PresentationRunnerRequest } from '../../../../packages/cordis-kernel/src/presentation';
 import { createProcessPresentationRunner } from './runner';
 
 // ---------------------------------------------------------------------------
@@ -50,9 +50,7 @@ const deferred = <T>() => {
 
 interface FakeChild {
   child: PresentationChildProcessPort;
-  exitDeferred: deferred<{ code: number | null; signal: string | null }> extends never
-    ? never
-    : ReturnType<typeof deferred<{ code: number | null; signal: string | null }>>;
+  exitDeferred: ReturnType<typeof deferred<{ code: number | null; signal: string | null }>>;
   kill: ReturnType<typeof vi.fn>;
   settle: (exit?: { code: number | null; signal: string | null }) => void;
 }
