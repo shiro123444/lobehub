@@ -62,11 +62,11 @@ export interface PresentationChildProcessPort {
    */
   readonly startError: Promise<unknown | undefined>;
   readonly stderr: AsyncIterable<Uint8Array>;
-  readonly stdout: AsyncIterable<Uint8Array>;
   /** Optional stdin writer used by JSONL workers; absent for argv-only fakes. */
   readonly stdin?: {
     end: (input?: string | Uint8Array) => void;
   };
+  readonly stdout: AsyncIterable<Uint8Array>;
 }
 
 /** Launcher surface; inject a fake in tests, defaults to node:child_process. */
@@ -91,12 +91,12 @@ export interface ProcessPresentationRunnerOptions {
   /** Configurable runner id (surfaced to the kernel's allow-list). */
   readonly id?: string;
   readonly launcher?: PresentationProcessLauncherPort;
+  /** Upper bound on collected artifacts (default 32). */
+  readonly maxArtifacts?: number;
   /** Optional JSONL/stdin payload builder, evaluated only after spawn. */
   readonly stdinBuilder?: (
     request: PresentationRunnerRequest,
   ) => string | Uint8Array | Promise<string | Uint8Array>;
-  /** Upper bound on collected artifacts (default 32). */
-  readonly maxArtifacts?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +193,7 @@ const findArtifacts = async (
       return;
     }
     for (const entry of entries) {
+      if (entry.startsWith('.') || /^(?:backups?|node_modules)$/i.test(entry)) continue;
       const relativePath = relativeDir ? `${relativeDir}/${entry}` : entry;
       if (/\.(?:pptx|svg)$/i.test(entry)) {
         found.push(relativePath);

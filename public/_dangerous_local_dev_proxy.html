@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nexus Debug Proxy</title>
+    <title>Qingzhou Debug Proxy</title>
     <script type="module">
       globalThis['__DEBUG_PROXY__'] = true;
 
@@ -140,7 +140,10 @@
         });
 
       Promise.all([configReady, devHtmlReady]).then(function () {
-        console.log('%c[Nexus Debug Proxy] Loaded from ' + host, 'color: #52c41a; font-weight: bold;');
+        console.log(
+          '%c[Qingzhou Debug Proxy] Loaded from ' + host,
+          'color: #52c41a; font-weight: bold;',
+        );
       });
     </script>
   </head>

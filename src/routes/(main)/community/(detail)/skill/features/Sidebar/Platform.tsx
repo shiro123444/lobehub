@@ -20,7 +20,6 @@ import { useTranslation } from 'react-i18next';
 import urlJoin from 'url-join';
 
 import { useAppOrigin } from '@/hooks/useAppOrigin';
-import { agentSkillService } from '@/services/skill';
 import { nexusRegistryService } from '@/services/nexusRegistry';
 import { useToolStore } from '@/store/tool';
 import { agentSkillsSelectors } from '@/store/tool/slices/agentSkills/selectors';
@@ -130,7 +129,11 @@ const Platform = memo<PlatformProps>(
     const installed = useToolStore(agentSkillsSelectors.isAgentSkill(identifier ?? ''));
     const refreshAgentSkills = useToolStore((s) => s.refreshAgentSkills);
     const communitySkillUrl = useMemo(
-      () => new URL(urlJoin('/community/skill', identifier || '<skill-identifier>'), appOrigin).toString(),
+      () =>
+        new URL(
+          urlJoin('/community/skill', identifier || '<skill-identifier>'),
+          appOrigin,
+        ).toString(),
       [appOrigin, identifier],
     );
 
@@ -166,7 +169,7 @@ const Platform = memo<PlatformProps>(
       switch (active) {
         case PlatformType.LobeHub: {
           return {
-            platform: 'LobeHub',
+            platform: 'Qingzhou',
             steps: t('skills.details.sidebar.platform.steps.lobehub'),
           };
         }
@@ -236,7 +239,9 @@ const Platform = memo<PlatformProps>(
       try {
         await nexusRegistryService.installSkill({ identifier });
         await refreshAgentSkills();
-        message.success(t('protocolInstall.messages.installSuccess', { name: identifier, ns: 'plugin' }));
+        message.success(
+          t('protocolInstall.messages.installSuccess', { name: identifier, ns: 'plugin' }),
+        );
       } catch (error) {
         console.error('Failed to install skill:', error);
         message.error(t('protocolInstall.messages.installError', { ns: 'plugin' }));
@@ -281,11 +286,7 @@ const Platform = memo<PlatformProps>(
                 <Text fontSize={12} type={'secondary'}>
                   {t('skills.details.sidebar.agent.useOnLobeAI')}
                 </Text>
-                <Button
-                  icon={<Icon icon={CopyIcon} />}
-                  size={'small'}
-                  onClick={handleCopyPrompt}
-                >
+                <Button icon={<Icon icon={CopyIcon} />} size={'small'} onClick={handleCopyPrompt}>
                   {t('skills.details.sidebar.agent.copyPrompt')}
                 </Button>
               </Flexbox>

@@ -9,16 +9,16 @@ export interface CapabilityDescriptor {
 }
 
 export interface CapabilityContext {
-  readonly scope?: string | symbol;
   readonly [key: string]: unknown;
+  readonly scope?: string | symbol;
 }
 
 /** The only seam an external project exposes to the Cordis kernel. */
 export interface CapabilityPort {
   readonly descriptor?: CapabilityDescriptor;
-  readonly id: string;
   readonly dispose?: () => void | Promise<void>;
-  execute(command: unknown, context: CapabilityContext): Promise<unknown>;
+  execute: (command: unknown, context: CapabilityContext) => Promise<unknown>;
+  readonly id: string;
 }
 
 export type CapabilityRegistryErrorCode =
@@ -64,6 +64,10 @@ const validCommand = (value: unknown): boolean =>
 
 export class CapabilityRegistry {
   private readonly capabilities = new Map<string, RegisteredCapability>();
+  private readonly stagedCapabilities = new Map<
+    RuntimeContext['fiber'],
+    Map<string, RegisteredCapability>
+  >();
 
   register(context: RuntimeContext, port: CapabilityPort): Disposable {
     if (!validPort(port)) {
@@ -78,6 +82,46 @@ export class CapabilityRegistry {
         `Capability descriptor id must match port id: ${port.descriptor.id} !== ${port.id}`,
       );
     }
+
+    const isStaging = Boolean((context as any).isStaging);
+    const fiber = context.fiber;
+
+    if (isStaging) {
+      let fiberStaged = this.stagedCapabilities.get(fiber);
+      if (!fiberStaged) {
+        fiberStaged = new Map();
+        this.stagedCapabilities.set(fiber, fiberStaged);
+      }
+      if (fiberStaged.has(port.id)) {
+        throw new CapabilityRegistryError(
+          'CAPABILITY_DUPLICATE',
+          `Capability is already registered in staging: ${port.id}`,
+        );
+      }
+      const entry = {
+        port,
+        owner: fiber,
+      } as RegisteredCapability;
+      fiberStaged.set(port.id, entry);
+
+      const remove = async (): Promise<void> => {
+        const staged = this.stagedCapabilities.get(fiber);
+        if (staged?.get(port.id) === entry) {
+          staged.delete(port.id);
+          if (staged.size === 0) this.stagedCapabilities.delete(fiber);
+          await port.dispose?.();
+        }
+      };
+
+      try {
+        entry.disposer = fiber.collect(remove);
+      } catch (error) {
+        void remove();
+        throw error;
+      }
+      return entry.disposer;
+    }
+
     if (this.capabilities.has(port.id)) {
       throw new CapabilityRegistryError(
         'CAPABILITY_DUPLICATE',
@@ -102,6 +146,39 @@ export class CapabilityRegistry {
     }
     this.capabilities.set(port.id, entry);
     return entry.disposer;
+  }
+
+  commitStaging(fiber: RuntimeContext['fiber']): void {
+    const fiberObj = fiber as any;
+    if (typeof fiberObj?.getChildren === 'function') {
+      for (const child of fiberObj.getChildren()) {
+        this.commitStaging(child);
+      }
+    }
+    const staged = this.stagedCapabilities.get(fiber);
+    if (!staged) return;
+
+    for (const [id, entry] of staged) {
+      this.capabilities.set(id, entry);
+      const remove = async () => {
+        if (this.capabilities.get(id) === entry) {
+          this.capabilities.delete(id);
+          await entry.port.dispose?.();
+        }
+      };
+      fiber.collect(remove);
+    }
+    this.stagedCapabilities.delete(fiber);
+  }
+
+  discardStaging(fiber: RuntimeContext['fiber']): void {
+    const fiberObj = fiber as any;
+    if (typeof fiberObj?.getChildren === 'function') {
+      for (const child of fiberObj.getChildren()) {
+        this.discardStaging(child);
+      }
+    }
+    this.stagedCapabilities.delete(fiber);
   }
 
   async unregister(id: string): Promise<void> {

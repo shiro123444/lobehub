@@ -1,5 +1,6 @@
 import type {
   ArtifactSnapshot,
+  PlannerContext,
   PresentationJobInput,
   PresentationPlan,
   RuntimeScope,
@@ -66,6 +67,14 @@ export class PresentationGenerationCapability {
     this.eventPublisher = options.eventPublisher ?? options.publisher;
   }
 
+  async plan(input: PresentationJobInput, context: PlannerContext): Promise<PresentationPlan> {
+    if (!this.pipeline.plan)
+      throw Object.assign(new Error('Revision planner is unavailable'), {
+        code: 'PROVIDER_UNAVAILABLE',
+      });
+    return this.pipeline.plan(input, context);
+  }
+
   async execute(
     scope: RuntimeScope,
     input: PresentationJobInput,
@@ -103,10 +112,11 @@ export class PresentationGenerationCapability {
           eventScope: scope,
         }
       : context;
-    const generated: PresentationGenerationResult = await this.pipeline.run(
-      clone(input),
-      generationContext,
-    );
+    const generated: PresentationGenerationResult = await this.pipeline.run(clone(input), {
+      ...generationContext,
+      plannerContext: { ...generationContext.plannerContext, scope },
+      workerContext: { ...generationContext.workerContext, scope },
+    });
     const artifacts = await persistPresentationWorkerArtifacts(scope, generated.worker, this.store);
     return clone({ plan: generated.plan, worker: generated.worker, artifacts });
   }

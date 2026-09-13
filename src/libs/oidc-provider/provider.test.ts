@@ -51,7 +51,8 @@ describe('OIDC Provider - Market Client Integration', () => {
 
       expect(marketClient).toBeDefined();
       expect(marketClient?.client_id).toBe('lobehub-market');
-      expect(marketClient?.client_name).toBe('LobeHub Marketplace');
+      expect(marketClient?.client_name).toBe('Qingzhou Marketplace');
+      expect(marketClient?.logo_uri).toBe('https://example.com/brand/qingzhou-mark.svg');
 
       vi.doUnmock('@/envs/app');
     });

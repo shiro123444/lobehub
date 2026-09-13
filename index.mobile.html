@@ -13,6 +13,36 @@
       html[data-theme='dark'] body {
         background-color: #000;
       }
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: inherit;
+        gap: 12px;
+      }
+      #loading-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: #1f1f1f;
+      }
+      #loading-brand img {
+        display: block;
+        width: 220px;
+        max-width: calc(100vw - 64px);
+        height: auto;
+        filter: drop-shadow(0 12px 40px rgb(0 0 0 / 12%));
+      }
+      html[data-theme='dark'] #loading-brand {
+        color: #f0f0f0;
+      }
+      html[data-theme='dark'] #loading-brand img {
+        filter: invert(1) drop-shadow(0 12px 40px rgb(255 255 255 / 8%));
+      }
     </style>
     <script>
       (function(){
@@ -62,6 +92,11 @@
   </head>
 
   <body>
+    <div id="loading-screen">
+      <div id="loading-brand" aria-label="Qingzhou loading" role="status">
+        <img alt="Qingzhou" src="/brand/qingzhou-loading.svg" />
+      </div>
+    </div>
     <div id="root" style="height: 100%"></div>
 
     <!--ANALYTICS_SCRIPTS-->

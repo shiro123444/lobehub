@@ -7,24 +7,24 @@ import type {
 import type { PresentationQualityReport, PresentationWorkerArtifact } from './worker';
 
 export interface PresentationToolchain {
-  qualityCheck(workspacePath: string, signal?: AbortSignal): Promise<PresentationQualityReport>;
-  convert(
+  convert: (
     workspacePath: string,
     signal?: AbortSignal,
-  ): Promise<readonly PresentationWorkerArtifact[]>;
+  ) => Promise<readonly PresentationWorkerArtifact[]>;
+  qualityCheck: (workspacePath: string, signal?: AbortSignal) => Promise<PresentationQualityReport>;
 }
 
 export interface PresentationToolchainOptions {
   allowedRunnerIds: readonly string[];
   convertScriptPath: string;
   maxOutputBytes?: number;
+  pptMasterRoot: string;
   providerCommand: readonly string[];
   qualityScriptPath: string;
   runner: PresentationRunner;
   runnerId: string;
   timeoutMs?: number;
   workspaceRoot: string;
-  pptMasterRoot: string;
 }
 
 export type PresentationToolchainErrorCode =
@@ -184,7 +184,14 @@ export class PptMasterToolchain implements PresentationToolchain {
     const process = this.options.runner.spawn({
       operation: kind === 'quality' ? 'create' : 'export',
       provider: this.options.providerCommand[0]!,
-      args: [...this.options.providerCommand.slice(1), script, workspace],
+      args: [
+        ...this.options.providerCommand.slice(1),
+        script,
+        workspace,
+        // The converter's default auto mode cycles effects across the whole
+        // deck. A fixed effect keeps untouched slides stable after page edits.
+        ...(kind === 'convert' ? ['--animation', 'fade'] : []),
+      ],
       cwd: workspace,
       jobId: `toolchain:${kind}`,
       timeoutMs: this.options.timeoutMs ?? 30_000,

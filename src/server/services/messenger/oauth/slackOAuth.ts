@@ -22,7 +22,7 @@ export interface BuildInstallUrlParams {
 /**
  * Build the Slack workspace-install authorize URL. The `state` parameter is
  * passed through verbatim — the caller is responsible for binding it to a
- * server-side record (LobeHub user id, nonce, ttl) so the callback handler
+ * server-side record (Qingzhou user id, nonce, ttl) so the callback handler
  * can validate the request didn't come from elsewhere.
  */
 export const buildInstallUrl = (params: BuildInstallUrlParams): string => {
@@ -102,7 +102,7 @@ export const exchangeCode = async (params: ExchangeCodeParams): Promise<OAuthV2A
 
 /**
  * Invalidate a Slack token via `auth.revoke`. Used when we reject a freshly
- * minted token (e.g. another LobeHub user already owns this workspace's
+ * minted token (e.g. another Qingzhou user already owns this workspace's
  * install) so the workspace doesn't end up with a dangling unused bot token.
  */
 export const revokeToken = async (token: string): Promise<void> => {

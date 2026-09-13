@@ -1,3 +1,4 @@
+import { parseString } from '../../../../packages/file-loaders/src/utils/parser-utils';
 import type {
   PlannerContext,
   PresentationJobInput,
@@ -5,7 +6,6 @@ import type {
   PresentationPlanner,
   PresentationSlidePlan,
 } from '../../../../packages/runtime-contracts/src';
-import { parseString } from '../../../../packages/file-loaders/src/utils/parser-utils';
 
 export type PresentationPlanErrorCode = 'PLAN_INVALID';
 
@@ -46,12 +46,17 @@ const cloneWireValue = <T>(value: T): T => {
 const svgBytes = (svg: string): number => new TextEncoder().encode(svg).byteLength;
 
 const validSvg = (svg: unknown): svg is string => {
-  if (!nonEmpty(svg) || /<\s*(script|html|body)\b/i.test(svg) || /<!DOCTYPE/i.test(svg))
+  if (
+    !nonEmpty(svg) ||
+    /<\s*(?:script|html|body|foreignObject)\b/i.test(svg) ||
+    /<!DOCTYPE/i.test(svg) ||
+    /\son[a-z]+\s*=/i.test(svg) ||
+    /(?:href|src)\s*=\s*['"]\s*javascript:/i.test(svg)
+  )
     return false;
-  let parserError = false;
   try {
     const document = parseString(svg);
-    parserError = document.getElementsByTagName('parsererror').length > 0;
+    const parserError = document.getElementsByTagName('parsererror').length > 0;
     return !parserError && document.documentElement?.tagName?.toLowerCase() === 'svg';
   } catch {
     return false;

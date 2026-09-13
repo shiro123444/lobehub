@@ -1,3 +1,5 @@
+import { CapabilityRegistry } from './capability';
+import { Context } from './context';
 import type { EventListener } from './journal';
 import { EventJournal } from './journal';
 import { PluginManager } from './manager';
@@ -5,6 +7,7 @@ import type { CommandEnvelope } from './protocol';
 import { CommandEnvelopeCodec } from './protocol';
 import type { ResumeRunInput, RunSnapshot, StartRunInput } from './run';
 import { RunStore } from './run';
+import { ToolRegistry } from './tool';
 import type { Disposable, RuntimePluginManifest } from './types';
 
 export type RuntimeFacadeErrorCode = 'COMMAND_NOT_FOUND' | 'COMMAND_INVALID';
@@ -20,13 +23,18 @@ export class RuntimeFacadeError extends Error {
 }
 
 export interface InMemoryRuntimeFacadeOptions {
+  capabilities?: CapabilityRegistry;
+  capabilityRegistry?: CapabilityRegistry;
   codec?: CommandEnvelopeCodec;
+  context?: Context;
   eventJournal?: EventJournal;
   journal?: EventJournal;
   pluginManager?: PluginManager;
   plugins?: RuntimePluginManifest[];
   runs?: RunStore;
   runStore?: RunStore;
+  toolRegistry?: ToolRegistry;
+  tools?: ToolRegistry;
 }
 
 type Payload = Record<string, unknown>;
@@ -42,6 +50,9 @@ export class InMemoryRuntimeFacade {
   public readonly runStore: RunStore;
   public readonly eventJournal: EventJournal;
   public readonly pluginManager: PluginManager;
+  public readonly context: Context;
+  public readonly toolRegistry: ToolRegistry;
+  public readonly capabilityRegistry: CapabilityRegistry;
 
   private readonly requestResults = new Map<string, Promise<unknown>>();
 
@@ -49,7 +60,46 @@ export class InMemoryRuntimeFacade {
     this.codec = options.codec ?? new CommandEnvelopeCodec();
     this.runStore = options.runStore ?? options.runs ?? new RunStore();
     this.eventJournal = options.eventJournal ?? options.journal ?? new EventJournal();
-    this.pluginManager = options.pluginManager ?? new PluginManager(options.plugins ?? []);
+    if (
+      options.context &&
+      options.pluginManager &&
+      options.context !== options.pluginManager.context
+    ) {
+      throw new RuntimeFacadeError(
+        'COMMAND_INVALID',
+        'Incompatible context: options.context does not match options.pluginManager.context',
+      );
+    }
+    this.context = options.context ?? options.pluginManager?.context ?? new Context();
+
+    const existingTools = this.context.get<ToolRegistry>('cordis.tools');
+    const injectedTools = options.toolRegistry ?? options.tools;
+    if (existingTools && injectedTools && existingTools !== injectedTools) {
+      throw new RuntimeFacadeError(
+        'COMMAND_INVALID',
+        'Incompatible toolRegistry: options.toolRegistry does not match context cordis.tools',
+      );
+    }
+    this.toolRegistry = injectedTools ?? existingTools ?? new ToolRegistry();
+    if (!existingTools) {
+      this.context.provide('cordis.tools', this.toolRegistry);
+    }
+
+    const existingCaps = this.context.get<CapabilityRegistry>('cordis.capabilities');
+    const injectedCaps = options.capabilityRegistry ?? options.capabilities;
+    if (existingCaps && injectedCaps && existingCaps !== injectedCaps) {
+      throw new RuntimeFacadeError(
+        'COMMAND_INVALID',
+        'Incompatible capabilityRegistry: options.capabilityRegistry does not match context cordis.capabilities',
+      );
+    }
+    this.capabilityRegistry = injectedCaps ?? existingCaps ?? new CapabilityRegistry();
+    if (!existingCaps) {
+      this.context.provide('cordis.capabilities', this.capabilityRegistry);
+    }
+
+    this.pluginManager =
+      options.pluginManager ?? new PluginManager(options.plugins ?? [], this.context);
   }
 
   async handle(input: CommandEnvelope | string | unknown): Promise<unknown> {
@@ -103,6 +153,42 @@ export class InMemoryRuntimeFacade {
       }
       case 'plugin.unmount': {
         return this.pluginManager.unmount(this.requiredPluginId(envelope.payload));
+      }
+      case 'plugin.reload': {
+        const id = this.requiredPluginId(envelope.payload);
+        const config = envelope.payload.config;
+        const version =
+          typeof envelope.payload.version === 'string'
+            ? envelope.payload.version
+            : typeof envelope.payload.targetVersion === 'string'
+              ? envelope.payload.targetVersion
+              : undefined;
+        return this.pluginManager.reload(id, config, version);
+      }
+      case 'tool.list': {
+        return this.toolRegistry.list(envelope.payload.scope as any);
+      }
+      case 'tool.execute': {
+        const name = stringValue(envelope.payload.name);
+        if (!name) throw new RuntimeFacadeError('COMMAND_INVALID', 'payload.name is required');
+        const args = envelope.payload.args ?? envelope.payload.arguments;
+        return this.toolRegistry.execute(
+          name,
+          args,
+          (envelope.payload.context as any) ?? this.context,
+        );
+      }
+      case 'capability.list': {
+        return this.capabilityRegistry.list();
+      }
+      case 'capability.execute': {
+        const id = stringValue(envelope.payload.id);
+        if (!id) throw new RuntimeFacadeError('COMMAND_INVALID', 'payload.id is required');
+        return this.capabilityRegistry.execute(
+          id,
+          envelope.payload.command,
+          (envelope.payload.context as any) ?? {},
+        );
       }
       default: {
         throw new RuntimeFacadeError(

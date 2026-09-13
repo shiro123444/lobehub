@@ -29,7 +29,7 @@ describe('Ld', () => {
       const org = ld.genOrganization();
 
       expect(org['@type']).toBe('Organization');
-      expect(org.name).toBe('LobeHub');
+      expect(org.name).toBe(BRANDING_NAME);
       expect(org.url).toBe('https://lobehub.com');
     });
   });

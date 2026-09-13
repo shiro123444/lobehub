@@ -1,4 +1,5 @@
 import { networkInterfaces } from 'node:os';
+
 import { defineConfig } from './src/libs/next/config/define-config';
 
 const isVercel = !!process.env.VERCEL_ENV;
@@ -40,6 +41,11 @@ const getLocalIPs = () => {
 
 const nextConfig = defineConfig({
   ...(isVercel ? vercelConfig : {}),
+  experimental: {
+    // PPT uploads allow 32 MiB files; preserve the full multipart body through
+    // Next's proxy (its 10 MiB default otherwise truncates valid uploads).
+    proxyClientMaxBodySize: '40mb',
+  },
 });
 
 if (process.env.NODE_ENV === 'development') {

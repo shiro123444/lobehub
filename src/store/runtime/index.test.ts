@@ -12,6 +12,7 @@ import { createRuntimeStore, runtimeSelectors } from './index';
 
 describe('RuntimeStore', () => {
   const createMockClient = (overrides: Partial<RuntimeClient> = {}): RuntimeClient => ({
+    sendPresentationMessage: vi.fn().mockResolvedValue({} as any),
     cancelPresentationJob: vi.fn().mockResolvedValue({} as any),
     cancelRun: vi.fn().mockResolvedValue(undefined),
     createImageGeneration: vi.fn().mockResolvedValue({ jobId: 'job-1', slots: [] }),

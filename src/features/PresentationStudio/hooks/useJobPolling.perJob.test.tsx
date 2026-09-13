@@ -197,3 +197,27 @@ describe('PresentationStudio per-job stream status (C-66)', () => {
     expect(store.getState().lastSeqByJob['job-b']).toBe(2);
   });
 });
+
+it('retains the real client receiver when subscribing so streaming does not silently degrade', async () => {
+  const receiver = vi.fn();
+  const client = jobStreamClient({ byJob: () => vi.fn() });
+  client.subscribePresentationJob = async function* (jobId, options) {
+    receiver(this);
+    if (this !== client) throw new Error('Lost client receiver');
+    yield jobEvent(jobId, 1);
+    await new Promise<void>((resolve) =>
+      options?.signal?.addEventListener('abort', () => resolve(), { once: true }),
+    );
+  };
+  const store = createPresentationStudioStore(client);
+  store.setState({
+    jobs: { bound: queuedJob('bound') },
+    jobOrder: ['bound'],
+    selectedJobId: 'bound',
+  });
+  const view = render(<Harness options={{ maxReconnectAttempts: 0 }} store={store} />);
+  await waitFor(() => expect(store.getState().lastSeqByJob.bound).toBe(1));
+  expect(receiver).toHaveBeenCalledWith(client);
+  expect(store.getState().streamStatusByJob.bound).toBe('live');
+  view.unmount();
+});

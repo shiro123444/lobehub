@@ -1,42 +1,56 @@
-import { Button, Flexbox, Icon, Tag } from '@lobehub/ui';
-import { Dropdown, Input, Popover, Spin, type MenuProps } from 'antd';
+import { Button, Flexbox, Icon } from '@lobehub/ui';
+import { Dropdown, Input, type MenuProps, Popover, Tooltip } from 'antd';
 import {
+  ArrowUp,
+  Check,
+  ChevronDown,
   Download,
   FileSpreadsheet,
   FileText,
+  History,
   Layers,
   LayoutGrid,
-  PanelRightClose,
   PanelRightOpen,
-  Presentation,
+  PanelsTopLeft,
+  Pause,
+  Plus,
   RefreshCw,
-  WandSparkles,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import { memo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type {
   PresentationExportFormat,
   PresentationJob,
 } from '../../../../packages/runtime-contracts/src/index';
 import { styles } from './style';
+import TemplateLibraryButton from './TemplateLibraryButton';
 import type { CompletedViewMode } from './types';
 
 export interface CapsuleHeaderProps {
+  availableFormats?: string[];
   canExport: boolean;
+  canQuickExport?: boolean;
   creating?: boolean;
   currentIndex: number;
   drawerOpen: boolean;
   exported: { artifactId: string; format: PresentationExportFormat; uri?: string } | null;
   exporting: boolean | string | null;
   job: PresentationJob;
+  jobs?: PresentationJob[];
   jobTitle?: string;
-  presentationStyle?: string;
   onAiModify: (prompt: string) => Promise<void>;
   onExport: (format: PresentationExportFormat) => void;
+  onJobChanged?: () => Promise<void>;
+  onNewPresentation?: () => void;
   onQuickExport: () => void;
   onRetryJob: () => void;
+  onSelectJob?: (jobId: string) => void;
   onToggleDrawer: () => void;
   onToggleViewMode: () => void;
+  presentationStyle?: string;
   slideCount: number;
   viewMode: CompletedViewMode;
 }
@@ -54,29 +68,33 @@ const MORE_EXPORT_FORMATS: {
 
 export const CapsuleHeader = memo<CapsuleHeaderProps>(
   ({
+    availableFormats,
     canExport,
+    canQuickExport = canExport,
     creating = false,
-    currentIndex,
     drawerOpen,
     exporting,
+    job,
     jobTitle,
-    presentationStyle,
+    jobs,
+    onSelectJob,
     onAiModify,
     onExport,
+    onJobChanged,
+    onNewPresentation,
     onQuickExport,
     onRetryJob,
     onToggleDrawer,
     onToggleViewMode,
-    slideCount,
     viewMode,
   }) => {
+    const { t } = useTranslation('common');
     const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
 
-    const pagePillText =
-      slideCount > 0
-        ? `${String(currentIndex + 1).padStart(2, '0')} / ${String(slideCount).padStart(2, '0')}`
-        : '00 / 00';
+    const working = job.state === 'running' || job.state === 'queued';
+    const statusText = working ? '正在修改' : job.state === 'completed' ? '已完成' : '已暂停';
+    const viewLabel = viewMode === 'lightbox' ? '单页精研' : '全景网格';
 
     const handleAiSubmit = async () => {
       if (!aiPrompt.trim() || creating) return;
@@ -85,19 +103,19 @@ export const CapsuleHeader = memo<CapsuleHeaderProps>(
       setAiPopoverOpen(false);
     };
 
-    const moreExportMenu: MenuProps['items'] = MORE_EXPORT_FORMATS.map(
-      ({ format, icon, label }) => ({
-        icon: <Icon icon={icon} size={13} />,
-        key: format,
-        label: (
-          <span>
-            导出 {label}
-            <span style={{ display: 'none' }}>Export {label}</span>
-          </span>
-        ),
-        onClick: () => onExport(format),
-      }),
-    );
+    const moreExportMenu: MenuProps['items'] = MORE_EXPORT_FORMATS.filter(
+      ({ format }) => !availableFormats || availableFormats.includes(format),
+    ).map(({ format, icon, label }) => ({
+      icon: <Icon aria-hidden icon={icon} size={18} />,
+      key: format,
+      label: (
+        <span>
+          导出 {label}
+          <span style={{ display: 'none' }}>Export {label}</span>
+        </span>
+      ),
+      onClick: () => onExport(format),
+    }));
 
     return (
       <header
@@ -110,109 +128,161 @@ export const CapsuleHeader = memo<CapsuleHeaderProps>(
             {jobTitle ?? '演示文稿'}
           </span>
 
-          <Tag color="success" data-testid="presentation-completed-tag">
-            已完成 · 共 {slideCount} 页
-          </Tag>
-
-          <Tag bordered={false} color="default" style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {pagePillText}
-          </Tag>
-
-          <Tag bordered={false} color="blue">
-            {presentationStyle || '商务科技'}
-          </Tag>
+          <span
+            className={styles.capsuleStatus}
+            data-testid="presentation-completed-tag"
+            role="status"
+          >
+            <Icon
+              aria-hidden
+              icon={working ? RefreshCw : job.state === 'completed' ? Check : Pause}
+              size={14}
+              spin={working}
+            />
+            {statusText}
+          </span>
         </div>
 
         <div className={styles.capsuleGroupRight}>
-          <Button
-            aria-label={viewMode === 'lightbox' ? '单页精研' : '全景网格'}
-            icon={<Icon icon={LayoutGrid} size={13} />}
-            size="small"
-            type={viewMode === 'lightbox' ? 'primary' : 'default'}
-            onClick={onToggleViewMode}
-          >
-            {viewMode === 'lightbox' ? '单页精研' : '全景网格'}
-          </Button>
+          {onNewPresentation && (
+            <Tooltip title={t('presentationTemplates.newPresentation')}>
+              <Button
+                aria-label={t('presentationTemplates.newPresentation')}
+                className={styles.iconButton}
+                icon={<Icon aria-hidden icon={Plus} size={22} />}
+                type="text"
+                onClick={onNewPresentation}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title={viewLabel}>
+            <Button
+              aria-label={viewLabel}
+              aria-pressed={viewMode === 'lightbox'}
+              className={styles.iconButton}
+              type="text"
+              icon={
+                <Icon
+                  aria-hidden
+                  icon={viewMode === 'lightbox' ? PanelsTopLeft : LayoutGrid}
+                  size={22}
+                />
+              }
+              onClick={onToggleViewMode}
+            />
+          </Tooltip>
 
-          <Button
-            aria-label="查看架构与资产"
-            icon={<Icon icon={drawerOpen ? PanelRightOpen : PanelRightClose} size={13} />}
-            size="small"
-            type={drawerOpen ? 'primary' : 'default'}
-            onClick={onToggleDrawer}
-          >
-            架构与资产
-          </Button>
+          <Tooltip title="架构与资产">
+            <Button
+              aria-label="查看架构与资产"
+              aria-pressed={drawerOpen}
+              className={styles.iconButton}
+              icon={<Icon aria-hidden icon={PanelRightOpen} size={22} />}
+              type="text"
+              onClick={onToggleDrawer}
+            />
+          </Tooltip>
 
-          {/* Low priority secondary AI modify action */}
+          {jobs && onSelectJob && (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                selectedKeys: [job.jobId],
+                items: jobs.map((item) => ({
+                  key: item.jobId,
+                  label: item.title ?? '未命名演示文稿',
+                })),
+                onClick: ({ key }) => onSelectJob(key),
+              }}
+            >
+              <Button
+                aria-label={t('presentationTemplates.history')}
+                className={styles.iconButton}
+                icon={<Icon icon={History} size={22} />}
+                type="text"
+              />
+            </Dropdown>
+          )}
+          <TemplateLibraryButton
+            canLearn={job.state === 'completed'}
+            jobId={job.jobId}
+            jobTitle={jobTitle}
+            onJobChanged={onJobChanged}
+          />
+
           <Popover
             open={aiPopoverOpen}
             placement="bottomRight"
             trigger="click"
             content={
               <Flexbox gap={10} style={{ padding: 4, width: 280 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>让 AI 迭代修改演示文稿</div>
                 <Input.TextArea
+                  aria-label="修改要求"
                   autoSize={{ maxRows: 6, minRows: 3 }}
-                  placeholder="请输入修改要求，例如：精简第 2 页内容、修改整体配色为商务科技蓝..."
+                  placeholder="想改些什么？"
                   value={aiPrompt}
                   onChange={(e) => setAiPrompt(e.target.value)}
                 />
                 <Flexbox horizontal gap={8} justify="flex-end">
-                  <Button size="small" onClick={() => setAiPopoverOpen(false)}>
-                    取消
-                  </Button>
-                  <Button
-                    disabled={!aiPrompt.trim() || creating}
-                    icon={<Icon icon={WandSparkles} size={12} />}
-                    loading={creating}
-                    size="small"
-                    type="primary"
-                    onClick={() => void handleAiSubmit()}
-                  >
-                    提交修改
-                  </Button>
+                  <Tooltip title="取消">
+                    <Button
+                      aria-label="取消修改"
+                      className={styles.iconButton}
+                      icon={<Icon aria-hidden icon={X} size={22} />}
+                      type="text"
+                      onClick={() => setAiPopoverOpen(false)}
+                    />
+                  </Tooltip>
+                  <Tooltip title="提交修改">
+                    <Button
+                      aria-label="提交修改"
+                      className={styles.iconButton}
+                      disabled={!aiPrompt.trim() || creating}
+                      icon={<Icon aria-hidden icon={ArrowUp} size={22} />}
+                      loading={creating}
+                      type="primary"
+                      onClick={() => void handleAiSubmit()}
+                    />
+                  </Tooltip>
                 </Flexbox>
               </Flexbox>
             }
             onOpenChange={setAiPopoverOpen}
           >
-            <Button
-              aria-label="Continue prompting AI"
-              icon={<Icon icon={WandSparkles} size={13} />}
-              size="small"
-              type="text"
-              style={{ color: 'var(--ant-color-text-secondary)' }}
-            >
-              AI 修改
-            </Button>
+            <Tooltip title={aiPopoverOpen ? undefined : 'AI 修改'}>
+              <Button
+                aria-expanded={aiPopoverOpen}
+                aria-label="Continue prompting AI"
+                className={styles.iconButton}
+                icon={<Icon aria-hidden icon={Sparkles} size={24} />}
+                type="text"
+              />
+            </Tooltip>
           </Popover>
 
-          {/* Low priority retry action */}
-          <Button
-            aria-label="Retry presentation job"
-            icon={<Icon icon={RefreshCw} size={12} />}
-            size="small"
-            type="text"
-            style={{ color: 'var(--ant-color-text-secondary)' }}
-            onClick={onRetryJob}
-          >
-            重新生成
-          </Button>
-
-          {/* Primary PPTX export section */}
-          <Flexbox horizontal align="center" gap={6}>
+          <Tooltip title="重新生成">
             <Button
-              aria-label="Quick export presentation"
-              disabled={!canExport}
-              icon={<Icon icon={Presentation} size={12} />}
-              loading={Boolean(exporting)}
-              size="small"
-              type="primary"
-              onClick={onQuickExport}
-            >
-              导出 PPTX
-            </Button>
+              aria-label="Retry presentation job"
+              className={styles.iconButton}
+              icon={<Icon aria-hidden icon={RefreshCw} size={22} />}
+              type="text"
+              onClick={onRetryJob}
+            />
+          </Tooltip>
+
+          <Flexbox horizontal align="center" className={styles.exportActions} gap={4}>
+            <Tooltip title={exporting ? '导出中…' : '导出 PowerPoint'}>
+              <Button
+                aria-busy={Boolean(exporting)}
+                aria-label="Quick export presentation"
+                className={styles.iconButton}
+                disabled={!canQuickExport}
+                icon={<Icon aria-hidden icon={Download} size={22} />}
+                loading={Boolean(exporting)}
+                type="primary"
+                onClick={onQuickExport}
+              />
+            </Tooltip>
 
             <Dropdown
               disabled={!canExport}
@@ -220,21 +290,17 @@ export const CapsuleHeader = memo<CapsuleHeaderProps>(
               placement="bottomRight"
               trigger={['click']}
             >
-              <Button
-                aria-busy={Boolean(exporting)}
-                aria-label="Export presentation artifact"
-                disabled={!canExport}
-                icon={<Icon icon={Download} size={12} />}
-                size="small"
-              />
+              <Tooltip title="其他格式">
+                <Button
+                  aria-busy={Boolean(exporting)}
+                  aria-label="Export presentation artifact"
+                  className={styles.iconButton}
+                  disabled={!canExport}
+                  icon={<Icon aria-hidden icon={ChevronDown} size={20} />}
+                  type="text"
+                />
+              </Tooltip>
             </Dropdown>
-
-            {Boolean(exporting) && (
-              <span className={styles.exportStatusHint}>
-                <Spin size="small" />
-                <span>导出中…</span>
-              </span>
-            )}
           </Flexbox>
         </div>
       </header>

@@ -34,6 +34,11 @@ if (typeof window !== 'undefined') {
   });
 }
 
-if (__DEV__) {
+// Keep profiling opt-in so its overlay does not cover editor controls.
+if (
+  __DEV__ &&
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('reactScan') === '1'
+) {
   scan({ enabled: true });
 }

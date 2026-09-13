@@ -23,10 +23,11 @@ export interface StoredArtifact extends ArtifactSnapshot {
 }
 
 export interface PresentationArtifactStore {
-  get(scope: RuntimeScope, artifactId: string): Promise<StoredArtifact | null>;
-  listByJob?(scope: RuntimeScope, jobId: string): Promise<readonly StoredArtifact[]>;
-  put(scope: RuntimeScope, artifact: ArtifactInput): Promise<ArtifactSnapshot>;
-  remove(scope: RuntimeScope, artifactId: string): Promise<void>;
+  get: (scope: RuntimeScope, artifactId: string) => Promise<StoredArtifact | null>;
+  list?: (scope: RuntimeScope) => Promise<ArtifactSnapshot[]>;
+  listByJob?: (scope: RuntimeScope, jobId: string) => Promise<readonly StoredArtifact[]>;
+  put: (scope: RuntimeScope, artifact: ArtifactInput) => Promise<ArtifactSnapshot>;
+  remove: (scope: RuntimeScope, artifactId: string) => Promise<void>;
 }
 
 export type PresentationArtifactStoreErrorCode =
@@ -118,7 +119,7 @@ export class InMemoryPresentationArtifactStore implements PresentationArtifactSt
       ? artifact.uri
       : `/api/runtime/presentation/artifacts/${encodeURIComponent(artifact.artifactId)}`;
     const metadata = cloneWireValue({
-      ...(artifact.metadata ?? {}),
+      ...artifact.metadata,
       ...(artifact.metadata?.jobId ? { jobId: artifact.metadata.jobId } : {}),
       ...(artifact.metadata?.slideId ? { slideId: artifact.metadata.slideId } : {}),
       mimeType: artifact.mimeType,

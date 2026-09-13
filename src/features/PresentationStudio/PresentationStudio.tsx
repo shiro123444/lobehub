@@ -1,12 +1,16 @@
 import { Button, Flexbox, Icon, Tag } from '@lobehub/ui';
-import { Alert, Input, Popover, Spin } from 'antd';
+import { Alert, Spin } from 'antd';
 import { FlaskConical, Presentation } from 'lucide-react';
 import { memo, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import type { PresentationTemplateSummary } from '@/services/runtime/templateClient';
 
 import type {
   ArtifactSnapshot,
   PresentationExportFormat,
   PresentationJob,
+  PresentationJobInput,
 } from '../../../packages/runtime-contracts/src/index';
 import PresentationAgentFlow from './AgentFlow';
 import type { OutlineSlide } from './AgentFlow/OutlineWorkspace';
@@ -17,10 +21,12 @@ import {
 import AnnotationBar from './AnnotationBar';
 import ArtifactPanel from './ArtifactPanel';
 import AssetSlotPanel from './AssetSlotPanel';
+import CompletedWorkspace from './CompletedWorkspace';
+import TemplateLibraryButton from './CompletedWorkspace/TemplateLibraryButton';
+import { ConversationPanel } from './ConversationPanel';
 import { defaultPresentationDemoClient } from './demo/presentationDemoClient';
 import type { UseJobPollingOptions } from './hooks/useJobPolling';
 import { usePresentationStudio } from './hooks/usePresentationStudio';
-import CompletedWorkspace from './CompletedWorkspace';
 import PresentationComposer from './PresentationComposer';
 import PresentationGenerationWorkspace from './PresentationGenerationWorkspace';
 import PresentationJobList from './PresentationJobList';
@@ -34,6 +40,16 @@ import {
   type PresentationTransportMode,
 } from './store/presentationStore';
 import { styles } from './style';
+
+const updatePresentationLocation = (jobId: string | null) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    if (jobId) url.searchParams.set('jobId', jobId);
+    else url.searchParams.delete('jobId');
+    window.history.replaceState(null, '', url.toString());
+  } catch {}
+};
 
 export interface PresentationStudioProps {
   /** Injectable Cordis conversation/outline transport; production uses HTTP. */
@@ -140,10 +156,15 @@ export const PresentationStudio = memo<PresentationStudioProps>(
     // C-76: resubmit recovery for a provider-unavailable create failure.
     const resubmitLastInput = store((s) => s.resubmitLastInput);
     const resubmitting = store((s) => s.resubmitting);
+    const { t } = useTranslation('common');
+    const [showQuickComposer, setShowQuickComposer] = useState(false);
+    const [selectedTemplate, setSelectedTemplate] = useState<PresentationTemplateSummary | null>(
+      null,
+    );
     const [creating, setCreating] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
-    const [initialTopic] = useState(initialTopicProp || '');
+    const [initialTopic, setInitialTopic] = useState(initialTopicProp || '');
     const presentationAgentClient = useMemo(
       () => agentClient ?? createPresentationAgentClient(),
       [agentClient],
@@ -194,6 +215,19 @@ export const PresentationStudio = memo<PresentationStudioProps>(
     const jobState = selectedJob?.state;
 
     const createJob = store((s) => s.createJob);
+    const createJobWithTemplate = async (input: PresentationJobInput) => {
+      const jobId = await createJob(
+        selectedTemplate
+          ? {
+              ...input,
+              options: { ...input.options, templateVersionId: selectedTemplate.versionId },
+              template: selectedTemplate.templateId,
+            }
+          : input,
+      );
+      if (jobId) updatePresentationLocation(jobId);
+      return jobId;
+    };
     const cancelJob = store((s) => s.cancelJob);
     const retryJob = store((s) => s.retryJob);
     // C-87: material slot actions for the selected job.
@@ -201,7 +235,11 @@ export const PresentationStudio = memo<PresentationStudioProps>(
     const slotRetryPending = store((s) => s.slotRetryPending);
     const retrySlot = store((s) => s.retrySlot);
     const dismissSlotError = store((s) => s.dismissSlotError);
-    const selectJob = store((s) => s.selectJob);
+    const selectJob = (jobId: string | null) => {
+      store.getState().selectJob(jobId);
+      updatePresentationLocation(jobId);
+      if (jobId) void store.getState().refreshJob(jobId);
+    };
     const selectArtifact = store((s) => s.selectArtifact);
     const exportArtifact = store((s) => s.exportArtifact);
     const dismissError = store((s) => s.dismissError);
@@ -240,6 +278,11 @@ export const PresentationStudio = memo<PresentationStudioProps>(
 
     const selectedArtifact =
       selectedJobArtifacts.find((a) => a.artifactId === selectedArtifactId) ??
+      slideArtifacts.find(
+        (a) =>
+          a.metadata?.slideNumber ===
+          (selectedArtifactId ? artifacts[selectedArtifactId]?.metadata?.slideNumber : undefined),
+      ) ??
       selectedJobArtifacts.find((a) => a.status === 'ready') ??
       selectedJobArtifacts[0];
 
@@ -288,7 +331,8 @@ export const PresentationStudio = memo<PresentationStudioProps>(
       if (creating || resubmitting) return;
       setCreating(true);
       try {
-        await resubmitLastInput();
+        const jobId = await resubmitLastInput();
+        if (jobId) selectJob(jobId);
       } finally {
         setCreating(false);
       }
@@ -299,26 +343,13 @@ export const PresentationStudio = memo<PresentationStudioProps>(
       if (!promptToUse || creating) return;
       setCreating(true);
       try {
-        const currentTitle = (selectedJobId && jobTitles[selectedJobId]) || '演示文稿';
-        const newJobId = await createJob({
-          aspectRatio: '16:9',
-          language: defaultLanguage ?? 'zh-CN',
-          notebookId: defaultNotebookId?.trim() || 'studio',
-          prompt: `基于演示文稿「${currentTitle}」进行迭代修改：${promptToUse}`,
-          slideCount: slideArtifacts.length > 0 ? slideArtifacts.length : 8,
-          sourceVersionIds: [...(defaultSourceVersionIds ?? [])],
-          title: `${currentTitle} (AI 修改)`,
+        if (!selectedJobId) return;
+        const applied = await store.getState().sendMessage(selectedJobId, {
+          content: promptToUse,
+          requestId: crypto.randomUUID(),
+          target: { type: 'deck' },
         });
-        if (newJobId && typeof window !== 'undefined') {
-          try {
-            window.sessionStorage?.setItem('presentation_studio_active_job_id', newJobId);
-            if (window.history?.replaceState) {
-              const url = new URL(window.location.href);
-              url.searchParams.set('jobId', newJobId);
-              window.history.replaceState(null, '', url.toString());
-            }
-          } catch {}
-        }
+        if (!applied) return;
         setAiPrompt('');
         setAiPopoverOpen(false);
       } finally {
@@ -349,10 +380,48 @@ export const PresentationStudio = memo<PresentationStudioProps>(
     };
 
     const selectedReady = Boolean(selectedArtifact && selectedArtifact.status === 'ready');
-    const canExport = jobState === 'completed' && selectedReady && !exporting;
+    const hasReadyDeck = selectedJobArtifacts.some(
+      (artifact) => artifact.type === 'pptx' && artifact.status === 'ready',
+    );
+    const canExport =
+      !exporting &&
+      ((jobState === 'completed' && selectedReady) ||
+        ((jobState === 'failed' || jobState === 'cancelled') && hasReadyDeck));
+    const handleNewPresentation = () => {
+      selectJob(null);
+      setShowQuickComposer(false);
+      setSelectedTemplate(null);
+      setInitialTopic('');
+      setAiPrompt('');
+      dismissError();
+      dismissExport();
+    };
+
+    const templatePicker = (
+      <Flexbox horizontal align="center" gap={6}>
+        <TemplateLibraryButton
+          selectedTemplate={selectedTemplate}
+          onSelectTemplate={setSelectedTemplate}
+        />
+        {selectedTemplate && (
+          <span
+            title={selectedTemplate.name}
+            style={{
+              fontSize: 12,
+              maxWidth: 180,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {selectedTemplate.name}
+          </span>
+        )}
+      </Flexbox>
+    );
 
     const emptyState =
-      jobs.length === 0 || initialLoading ? (
+      !selectedJob || initialLoading ? (
         initialLoading ? (
           <div
             aria-label="Restoring presentation jobs"
@@ -363,8 +432,21 @@ export const PresentationStudio = memo<PresentationStudioProps>(
             <Spin size="large" />
             <p className={styles.emptyDescription}>正在恢复演示文稿任务…</p>
           </div>
+        ) : showQuickComposer ? (
+          <Flexbox horizontal align="center" gap={8} justify="center">
+            <Button type="text" onClick={() => setShowQuickComposer(false)}>
+              {t('presentationConversation.backToPlanning')}
+            </Button>
+            {templatePicker}
+          </Flexbox>
         ) : (
           <div className={styles.emptyArea} data-testid="studio-empty-state">
+            <Flexbox horizontal align="center" gap={8} justify="center">
+              <Button type="text" onClick={() => setShowQuickComposer(true)}>
+                {t('presentationConversation.quickCreate')}
+              </Button>
+              {templatePicker}
+            </Flexbox>
             <PresentationAgentFlow
               agentClient={presentationAgentClient}
               creating={creating}
@@ -372,22 +454,13 @@ export const PresentationStudio = memo<PresentationStudioProps>(
               defaultNotebookId={defaultNotebookId}
               defaultSourceVersionIds={defaultSourceVersionIds}
               initialTopic={initialTopic}
+              selectedTemplate={selectedTemplate ?? undefined}
               onOutlineAiRewrite={handleOutlineAiRewrite}
               onCreate={async (input) => {
                 if (creating) return;
                 setCreating(true);
                 try {
-                  const jobId = await createJob(input);
-                  if (jobId && typeof window !== 'undefined') {
-                    try {
-                      window.sessionStorage?.setItem('presentation_studio_active_job_id', jobId);
-                      if (window.history?.replaceState) {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('jobId', jobId);
-                        window.history.replaceState(null, '', url.toString());
-                      }
-                    } catch {}
-                  }
+                  await createJobWithTemplate(input);
                 } finally {
                   setCreating(false);
                 }
@@ -402,7 +475,7 @@ export const PresentationStudio = memo<PresentationStudioProps>(
         className={className ? `${styles.studio} ${className}` : styles.studio}
         data-testid="presentation-studio"
       >
-        {jobs.length > 0 && !isGenerating && jobState !== 'completed' ? (
+        {selectedJob && !isGenerating && jobState !== 'completed' ? (
           <header aria-label="Presentation studio header" className={styles.banner}>
             <Flexbox horizontal align="center" gap={12}>
               <Icon icon={Presentation} size={18} />
@@ -579,13 +652,13 @@ export const PresentationStudio = memo<PresentationStudioProps>(
               description={
                 exported.uri ? (
                   <a download data-testid="presentation-export-download" href={exported.uri}>
-                    Download export
+                    下载文件
                   </a>
                 ) : undefined
               }
               message={
                 <span>
-                  {`已生成导出文件 (${exported.format}): ${exported.artifactId}`}
+                  {`${exported.format.toUpperCase()} 已就绪`}
                   <span style={{ display: 'none' }}>
                     {`Export created (${exported.format}): ${exported.artifactId}`}
                   </span>
@@ -596,201 +669,233 @@ export const PresentationStudio = memo<PresentationStudioProps>(
           </div>
         )}
 
-        {emptyState ? (
-          <div className={styles.emptyShell} data-testid="presentation-empty-shell">
-            <div className={styles.srOnly}>
-              <Button
-                aria-label="Focus the presentation creator"
-                className={styles.srOnly}
-                size="small"
-                onClick={() => document.getElementById('presentation-composer-title')?.focus()}
-              >
-                开始创建
-              </Button>
-              <PresentationComposer
-                defaultLanguage={defaultLanguage}
-                defaultNotebookId={defaultNotebookId}
-                defaultSourceVersionIds={defaultSourceVersionIds}
-                onCreate={createJob}
-              />
-              <PresentationJobList
-                jobs={jobs}
-                selectedJobId={selectedJobId}
-                titles={jobTitles}
-                onSelect={selectJob}
-              />
-            </div>
-            {emptyState}
-          </div>
-        ) : isGenerating && selectedJob ? (
-          <>
-            <PresentationGenerationWorkspace
-              artifacts={selectedJobArtifactMap}
-              busyState={busyState}
-              job={generatingJob ?? selectedJob}
-              streamStatus={selectedStreamStatus}
-              title={conciseTitle}
-              onCancel={cancelJob}
-            />
-            <div className={styles.srOnly}>
-              <PresentationJobList
-                jobs={jobs}
-                selectedJobId={selectedJobId}
-                titles={jobTitles}
-                onSelect={selectJob}
-              />
-              <PresentationComposer
-                defaultLanguage={defaultLanguage}
-                defaultNotebookId={defaultNotebookId}
-                defaultSourceVersionIds={defaultSourceVersionIds}
-                onCreate={createJob}
-              />
-              <ArtifactPanel
-                artifacts={selectedJobArtifacts}
-                exporting={Boolean(exporting)}
-                jobState={jobState ?? null}
-                selectedArtifactId={effectiveSelectedArtifactId}
-                onExport={handleExport}
-                onSelect={selectArtifact}
-              />
-              {selectedJobId && (
-                <AssetSlotPanel
-                  resolveArtifactUri={resolveArtifactUri}
-                  retryPendingKeys={retryPendingKeys}
-                  slots={selectedJobSlots}
-                  onDismissError={(slideId, slotId) => {
-                    dismissSlotError(selectedJobId, slideId, slotId);
-                  }}
-                  onRetry={(slideId, slotId) => {
-                    void retrySlot(selectedJobId, slideId, slotId);
-                  }}
-                />
-              )}
-              <SlideNavigator
-                hasSelection={Boolean(selectedJob)}
-                selectedArtifactId={effectiveSelectedArtifactId}
-                slides={slideArtifacts}
-                onSelect={selectArtifact}
-              />
-              <SlidePreview artifact={selectedSlide ?? null} />
-            </div>
-          </>
-        ) : jobState === 'completed' && selectedJob ? (
-          <div className={styles.completedMain}>
-            <CompletedWorkspace
-              canExport={canExport}
-              creating={creating}
-              dismissSlotError={dismissSlotError}
-              effectiveSelectedArtifactId={effectiveSelectedArtifactId}
-              exported={exported}
-              exporting={exporting}
-              jobTitles={jobTitles}
-              resolveArtifactUri={resolveArtifactUri}
-              retryPendingKeys={retryPendingKeys}
-              retrySlot={async (...args) => {
-                await retrySlot(...args);
-              }}
-              selectedJob={selectedJob}
-              selectedJobArtifacts={selectedJobArtifacts}
-              selectedJobSlots={selectedJobSlots}
-              selectedSlide={selectedSlide ?? null}
-              showInspector={showInspector}
-              slideArtifacts={slideArtifacts}
-              onAiModify={handleAiModify}
-              onExport={handleExport}
-              onRetryJob={retryJob}
-              onSelectArtifact={selectArtifact}
-            />
-
-            <div className={styles.srOnly}>
-              <PresentationJobList
-                jobs={jobs}
-                selectedJobId={selectedJobId}
-                titles={jobTitles}
-                onSelect={selectJob}
-              />
-              <PresentationComposer
-                defaultLanguage={defaultLanguage}
-                defaultNotebookId={defaultNotebookId}
-                defaultSourceVersionIds={defaultSourceVersionIds}
-                onCreate={createJob}
-              />
-              <PresentationProgress
-                busyState={busyState}
-                job={selectedJob ?? null}
-                streamStatus={selectedStreamStatus}
-                title={selectedJob ? jobTitles[selectedJob.jobId] : undefined}
-                onCancel={cancelJob}
-                onRetry={retryJob}
-              />
-              {showAnnotationBar && <AnnotationBar />}
-            </div>
-          </div>
-        ) : (
-          <div className={styles.grid}>
-            <div className={styles.columnLeft}>
-              <PresentationJobList
-                jobs={jobs}
-                selectedJobId={selectedJobId}
-                titles={jobTitles}
-                onSelect={selectJob}
-              />
-              <div className={styles.srOnly}>
-                <PresentationComposer
-                  defaultLanguage={defaultLanguage}
-                  defaultNotebookId={defaultNotebookId}
-                  defaultSourceVersionIds={defaultSourceVersionIds}
-                  onCreate={createJob}
-                />
+        <div className={selectedJob ? styles.conversationLayout : undefined}>
+          <div className={styles.conversationMain}>
+            {emptyState ? (
+              <div className={styles.emptyShell} data-testid="presentation-empty-shell">
+                <div className={showQuickComposer ? styles.columnMain : styles.srOnly}>
+                  <Button
+                    aria-label="Focus the presentation creator"
+                    className={styles.srOnly}
+                    size="small"
+                    onClick={() => document.getElementById('presentation-composer-title')?.focus()}
+                  >
+                    开始创建
+                  </Button>
+                  <PresentationComposer
+                    defaultLanguage={defaultLanguage}
+                    defaultNotebookId={defaultNotebookId}
+                    defaultSourceVersionIds={defaultSourceVersionIds}
+                    onCreate={createJobWithTemplate}
+                  />
+                </div>
+                {emptyState}
+                {jobs.length > 0 && (
+                  <details style={{ alignSelf: 'center', marginTop: 12 }}>
+                    <summary
+                      style={{
+                        cursor: 'pointer',
+                        color: 'var(--ant-color-text-tertiary)',
+                        fontSize: 12,
+                      }}
+                    >
+                      我的作品
+                    </summary>
+                    <PresentationJobList
+                      jobs={jobs}
+                      selectedJobId={selectedJobId}
+                      titles={jobTitles}
+                      onSelect={selectJob}
+                    />
+                  </details>
+                )}
               </div>
-            </div>
-
-            <div className={styles.columnMain}>
-              <PresentationProgress
-                busyState={busyState}
-                job={selectedJob ?? null}
-                streamStatus={selectedStreamStatus}
-                title={selectedJob ? jobTitles[selectedJob.jobId] : undefined}
-                onCancel={cancelJob}
-                onRetry={retryJob}
-              />
-
-              <SlideNavigator
-                hasSelection={Boolean(selectedJob)}
-                selectedArtifactId={effectiveSelectedArtifactId}
-                slides={slideArtifacts}
-                onSelect={selectArtifact}
-              />
-              <SlidePreview artifact={selectedSlide ?? null} />
-            </div>
-
-            <div className={styles.columnRight}>
-              <ArtifactPanel
-                artifacts={selectedJobArtifacts}
-                exporting={Boolean(exporting)}
-                jobState={jobState ?? null}
-                selectedArtifactId={effectiveSelectedArtifactId}
-                onExport={handleExport}
-                onSelect={selectArtifact}
-              />
-              {selectedJobId && (
-                <AssetSlotPanel
+            ) : isGenerating && selectedJob ? (
+              <>
+                <PresentationGenerationWorkspace
+                  artifacts={selectedJobArtifactMap}
+                  busyState={busyState}
+                  job={generatingJob ?? selectedJob}
+                  streamStatus={selectedStreamStatus}
+                  title={conciseTitle}
+                  onCancel={cancelJob}
+                />
+                <div className={styles.srOnly}>
+                  <PresentationJobList
+                    jobs={jobs}
+                    selectedJobId={selectedJobId}
+                    titles={jobTitles}
+                    onSelect={selectJob}
+                  />
+                  <PresentationComposer
+                    defaultLanguage={defaultLanguage}
+                    defaultNotebookId={defaultNotebookId}
+                    defaultSourceVersionIds={defaultSourceVersionIds}
+                    onCreate={createJobWithTemplate}
+                  />
+                  <ArtifactPanel
+                    artifacts={selectedJobArtifacts}
+                    exporting={Boolean(exporting)}
+                    jobState={jobState ?? null}
+                    selectedArtifactId={effectiveSelectedArtifactId}
+                    onExport={handleExport}
+                    onSelect={selectArtifact}
+                  />
+                  {selectedJobId && (
+                    <AssetSlotPanel
+                      resolveArtifactUri={resolveArtifactUri}
+                      retryPendingKeys={retryPendingKeys}
+                      slots={selectedJobSlots}
+                      onDismissError={(slideId, slotId) => {
+                        dismissSlotError(selectedJobId, slideId, slotId);
+                      }}
+                      onRetry={(slideId, slotId) => {
+                        void retrySlot(selectedJobId, slideId, slotId);
+                      }}
+                    />
+                  )}
+                  <SlideNavigator
+                    hasSelection={Boolean(selectedJob)}
+                    selectedArtifactId={effectiveSelectedArtifactId}
+                    slides={slideArtifacts}
+                    onSelect={selectArtifact}
+                  />
+                  <SlidePreview artifact={selectedSlide ?? null} />
+                </div>
+              </>
+            ) : selectedJob && (jobState === 'completed' || slideArtifacts.length > 0) ? (
+              <div className={styles.completedMain}>
+                <CompletedWorkspace
+                  canExport={canExport}
+                  creating={creating}
+                  dismissSlotError={dismissSlotError}
+                  effectiveSelectedArtifactId={effectiveSelectedArtifactId}
+                  exported={exported}
+                  exporting={exporting}
+                  jobTitles={jobTitles}
+                  jobs={jobs}
                   resolveArtifactUri={resolveArtifactUri}
                   retryPendingKeys={retryPendingKeys}
-                  slots={selectedJobSlots}
-                  onDismissError={(slideId, slotId) => {
-                    dismissSlotError(selectedJobId, slideId, slotId);
+                  selectedJob={selectedJob}
+                  selectedJobArtifacts={selectedJobArtifacts}
+                  selectedJobSlots={selectedJobSlots}
+                  selectedSlide={selectedSlide ?? null}
+                  showInspector={showInspector}
+                  slideArtifacts={slideArtifacts}
+                  retrySlot={async (...args) => {
+                    await retrySlot(...args);
                   }}
-                  onRetry={(slideId, slotId) => {
-                    void retrySlot(selectedJobId, slideId, slotId);
-                  }}
+                  onAiModify={handleAiModify}
+                  onExport={handleExport}
+                  onJobChanged={() => store.getState().refreshJob(selectedJob!.jobId)}
+                  onNewPresentation={handleNewPresentation}
+                  onRetryJob={retryJob}
+                  onSelectArtifact={selectArtifact}
+                  onSelectJob={selectJob}
+                  onSendMessage={store.getState().sendMessage}
                 />
-              )}
-              {showInspector && <SlideInspector artifact={selectedArtifact ?? null} />}
-              {showAnnotationBar && <AnnotationBar />}
-            </div>
+
+                <div className={styles.srOnly}>
+                  <PresentationJobList
+                    jobs={jobs}
+                    selectedJobId={selectedJobId}
+                    titles={jobTitles}
+                    onSelect={selectJob}
+                  />
+                  <PresentationComposer
+                    defaultLanguage={defaultLanguage}
+                    defaultNotebookId={defaultNotebookId}
+                    defaultSourceVersionIds={defaultSourceVersionIds}
+                    onCreate={createJobWithTemplate}
+                  />
+                  <PresentationProgress
+                    busyState={busyState}
+                    job={selectedJob ?? null}
+                    streamStatus={selectedStreamStatus}
+                    title={selectedJob ? jobTitles[selectedJob.jobId] : undefined}
+                    onCancel={cancelJob}
+                    onRetry={retryJob}
+                  />
+                  {showAnnotationBar && <AnnotationBar />}
+                </div>
+              </div>
+            ) : (
+              <div className={styles.grid}>
+                <div className={styles.columnLeft}>
+                  <PresentationJobList
+                    jobs={jobs}
+                    selectedJobId={selectedJobId}
+                    titles={jobTitles}
+                    onSelect={selectJob}
+                  />
+                  <div className={styles.srOnly}>
+                    <PresentationComposer
+                      defaultLanguage={defaultLanguage}
+                      defaultNotebookId={defaultNotebookId}
+                      defaultSourceVersionIds={defaultSourceVersionIds}
+                      onCreate={createJobWithTemplate}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.columnMain}>
+                  <PresentationProgress
+                    busyState={busyState}
+                    job={selectedJob ?? null}
+                    streamStatus={selectedStreamStatus}
+                    title={selectedJob ? jobTitles[selectedJob.jobId] : undefined}
+                    onCancel={cancelJob}
+                    onRetry={retryJob}
+                  />
+
+                  <SlideNavigator
+                    hasSelection={Boolean(selectedJob)}
+                    selectedArtifactId={effectiveSelectedArtifactId}
+                    slides={slideArtifacts}
+                    onSelect={selectArtifact}
+                  />
+                  <SlidePreview artifact={selectedSlide ?? null} />
+                </div>
+
+                <div className={styles.columnRight}>
+                  <ArtifactPanel
+                    artifacts={selectedJobArtifacts}
+                    exporting={Boolean(exporting)}
+                    jobState={jobState ?? null}
+                    selectedArtifactId={effectiveSelectedArtifactId}
+                    onExport={handleExport}
+                    onSelect={selectArtifact}
+                  />
+                  {selectedJobId && (
+                    <AssetSlotPanel
+                      resolveArtifactUri={resolveArtifactUri}
+                      retryPendingKeys={retryPendingKeys}
+                      slots={selectedJobSlots}
+                      onDismissError={(slideId, slotId) => {
+                        dismissSlotError(selectedJobId, slideId, slotId);
+                      }}
+                      onRetry={(slideId, slotId) => {
+                        void retrySlot(selectedJobId, slideId, slotId);
+                      }}
+                    />
+                  )}
+                  {showInspector && <SlideInspector artifact={selectedArtifact ?? null} />}
+                  {showAnnotationBar && <AnnotationBar />}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+          {selectedJob && (
+            <ConversationPanel
+              job={selectedJob}
+              key={selectedJob.jobId}
+              selectedPage={Number(selectedSlide?.metadata?.slideNumber) || undefined}
+              onCancel={cancelJob}
+              onRetry={retryJob}
+              onSend={store.getState().sendMessage}
+            />
+          )}
+        </div>
       </div>
     );
   },

@@ -73,11 +73,14 @@ export class Manifest {
     };
   }
 
-  private _getImage = (url: string, version: number = 1) => ({
+  private _getImage = (url: string, version: number = 1, useBrandLogo = true) => ({
     cache_busting_mode: 'query',
     immutable: 'true',
     max_age: MAX_AGE,
-    src: qs.stringifyUrl({ query: { v: version }, url: BRANDING_LOGO_URL || url }),
+    src: qs.stringifyUrl({
+      query: { v: version },
+      url: useBrandLogo ? BRANDING_LOGO_URL || url : url,
+    }),
   });
 
   private _getIcon = ({ url, version, sizes, purpose }: IconItem) => ({
@@ -88,7 +91,7 @@ export class Manifest {
   });
 
   private _getScreenshot = ({ form_factor, url, version, sizes }: ScreenshotItem) => ({
-    ...this._getImage(url, version),
+    ...this._getImage(url, version, false),
     form_factor,
     sizes: sizes || form_factor === 'wide' ? '1280x676' : '640x1138',
     type: 'image/png',

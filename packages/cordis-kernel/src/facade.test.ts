@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { Context } from './context';
 import { InMemoryRuntimeFacade } from './index';
 import { EventJournal } from './journal';
+import { PluginManager } from './manager';
 import type { CommandEnvelope } from './protocol';
 import { RunStore } from './run';
+import { ToolRegistry } from './tool';
 import type { RuntimePluginManifest } from './types';
 
 const envelope = (
@@ -148,6 +151,56 @@ describe('@lobechat/cordis-kernel InMemoryRuntimeFacade', () => {
     expect(unmounted).toBe('disabled');
   });
 
+  it('routes plugin.reload and executes tool/capability commands through registries', async () => {
+    const facade = new InMemoryRuntimeFacade({
+      plugins: [plugin('reloading-plugin')],
+    });
+
+    await facade.handle(envelope('mount-1', 'plugin.mount', { id: 'reloading-plugin' }));
+    const reloaded = await facade.handle(
+      envelope('reload-1', 'plugin.reload', { id: 'reloading-plugin' }),
+    );
+    expect(reloaded).toBe('active');
+
+    // Tool registration via facade.context
+    facade.toolRegistry.register(facade.context, {
+      name: 'echo',
+      description: 'Echoes message',
+      inputSchema: {},
+      execute: (args: any) => ({ echoed: args.message }),
+    });
+
+    const tools = await facade.handle(envelope('tool-list', 'tool.list'));
+    expect(tools).toEqual([
+      expect.objectContaining({ name: 'echo', description: 'Echoes message' }),
+    ]);
+
+    const toolResult = await facade.handle(
+      envelope('tool-exec', 'tool.execute', {
+        name: 'echo',
+        args: { message: 'hello cordis' },
+      }),
+    );
+    expect(toolResult).toEqual({ echoed: 'hello cordis' });
+
+    // Capability registration via facade.context
+    facade.capabilityRegistry.register(facade.context, {
+      id: 'mock.cap',
+      execute: async (cmd: any) => ({ handled: cmd.type }),
+    });
+
+    const caps = await facade.handle(envelope('cap-list', 'capability.list'));
+    expect(caps).toEqual([expect.objectContaining({ id: 'mock.cap' })]);
+
+    const capResult = await facade.handle(
+      envelope('cap-exec', 'capability.execute', {
+        id: 'mock.cap',
+        command: { type: 'ping' },
+      }),
+    );
+    expect(capResult).toEqual({ handled: 'ping' });
+  });
+
   it('returns null for an unknown run and an empty event replay', async () => {
     const facade = new InMemoryRuntimeFacade();
 
@@ -164,5 +217,64 @@ describe('@lobechat/cordis-kernel InMemoryRuntimeFacade', () => {
     const encoded = JSON.stringify(envelope('encoded-get', 'run.get', { runId: 'missing' }));
 
     await expect(facade.handle(encoded)).resolves.toBe(null);
+  });
+
+  it('validates context and registry consistency upon instantiation', () => {
+    const ctx = new Context();
+    const existingTools = new ToolRegistry();
+    ctx.provide('cordis.tools', existingTools);
+
+    // Reuses existingTools from context when not explicitly passed
+    const facade1 = new InMemoryRuntimeFacade({ context: ctx });
+    expect(facade1.toolRegistry).toBe(existingTools);
+
+    // Throws if a conflicting toolRegistry is injected
+    const conflictingTools = new ToolRegistry();
+    expect(
+      () => new InMemoryRuntimeFacade({ context: ctx, toolRegistry: conflictingTools }),
+    ).toThrow('Incompatible toolRegistry');
+
+    // Throws if context does not match pluginManager.context
+    const managerContext = new Context();
+    const manager = new PluginManager([], managerContext);
+    expect(() => new InMemoryRuntimeFacade({ context: ctx, pluginManager: manager })).toThrow(
+      'Incompatible context',
+    );
+  });
+
+  it('supports targetVersion and config in plugin.reload envelope', async () => {
+    let activeVersion = '';
+    const p1: RuntimePluginManifest = {
+      id: 'versioned',
+      version: '1.0.0',
+      kind: 'capability',
+      apply: () => {
+        activeVersion = '1.0.0';
+      },
+    };
+    const p2: RuntimePluginManifest = {
+      id: 'versioned',
+      version: '2.0.0',
+      kind: 'capability',
+      apply: () => {
+        activeVersion = '2.0.0';
+      },
+    };
+
+    const facade = new InMemoryRuntimeFacade({ plugins: [p1, p2] });
+    await facade.handle(envelope('mount-1', 'plugin.mount', { id: 'versioned' }));
+    expect(activeVersion).toBe('1.0.0');
+
+    // Reload with explicit targetVersion: '2.0.0'
+    await facade.handle(
+      envelope('reload-1', 'plugin.reload', { id: 'versioned', targetVersion: '2.0.0' }),
+    );
+    expect(activeVersion).toBe('2.0.0');
+
+    // Reload with explicit rollback targetVersion: '1.0.0'
+    await facade.handle(
+      envelope('reload-2', 'plugin.reload', { id: 'versioned', version: '1.0.0' }),
+    );
+    expect(activeVersion).toBe('1.0.0');
   });
 });

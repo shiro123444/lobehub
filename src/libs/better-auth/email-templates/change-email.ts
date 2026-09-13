@@ -33,7 +33,7 @@ export const getChangeEmailVerificationTemplate = (params: {
     <div style="text-align: center; margin-bottom: 32px;">
       <div style="display: inline-flex; align-items: center; justify-content: center; background-color: #ffffff; border-radius: 12px; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
         <span style="font-size: 24px; line-height: 1; margin-right: 10px;">🤯</span>
-        <span style="font-size: 18px; font-weight: 700; color: #000000; letter-spacing: -0.5px;">Nexus</span>
+        <span style="font-size: 18px; font-weight: 700; color: #000000; letter-spacing: -0.5px;">Qingzhou</span>
       </div>
     </div>
 
@@ -55,7 +55,7 @@ export const getChangeEmailVerificationTemplate = (params: {
         ${userName ? `<p style="margin: 0 0 16px 0;">Hi <strong>${userName}</strong>,</p>` : ''}
 
         <p style="margin: 0 0 24px 0;">
-          We received a request to change your Nexus account email to this address. Please confirm by clicking the button below.
+          We received a request to change your Qingzhou account email to this address. Please confirm by clicking the button below.
         </p>
 
         <!-- Button -->
@@ -95,14 +95,14 @@ export const getChangeEmailVerificationTemplate = (params: {
     <!-- Footer -->
     <div style="text-align: center; margin-top: 32px;">
       <p style="color: #a1a1aa; font-size: 13px; margin: 0;">
-        © 2026 Nexus. All rights reserved.
+        © 2026 Qingzhou. All rights reserved.
       </p>
     </div>
   </div>
 </body>
 </html>
     `,
-    subject: 'Confirm Your New Email - Nexus',
-    text: `You requested to change your Nexus account email. Please confirm by clicking this link: ${url}\n\nThis link will expire in ${expirationText}.\n\nIf you didn't request this change, you can safely ignore this email.`,
+    subject: 'Confirm Your New Email - Qingzhou',
+    text: `You requested to change your Qingzhou account email. Please confirm by clicking this link: ${url}\n\nThis link will expire in ${expirationText}.\n\nIf you didn't request this change, you can safely ignore this email.`,
   };
 };

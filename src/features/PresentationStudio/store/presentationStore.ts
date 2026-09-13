@@ -6,6 +6,7 @@ import type {
   PresentationExportFormat,
   PresentationJob,
   PresentationJobInput,
+  PresentationMessageInput,
 } from '../../../../packages/runtime-contracts/src/index';
 import {
   type PresentationJobEvent,
@@ -259,6 +260,7 @@ export interface PresentationStudioActions {
   exportArtifact: (artifactId: string, format: PresentationExportFormat) => Promise<void>;
   refreshArtifacts: (jobId: string) => Promise<void>;
   refreshJob: (jobId: string) => Promise<void>;
+  restoreJobList: () => Promise<string[]>;
   /** Re-runs the last failed `createJob` draft (C-74); no-op without a draft. */
   resubmitLastInput: () => Promise<string | null>;
   retryJob: (jobId: string) => Promise<void>;
@@ -269,7 +271,8 @@ export interface PresentationStudioActions {
    */
   retrySlot: (jobId: string, slideId: string, slotId: string) => Promise<boolean>;
   selectArtifact: (artifactId: string) => void;
-  selectJob: (jobId: string) => void;
+  selectJob: (jobId: string | null) => void;
+  sendMessage: (jobId: string, input: PresentationMessageInput) => Promise<boolean>;
   setInitialLoading: (loading: boolean) => void;
   /** Legacy aggregate setter (C-64 compatibility); does not touch per-job map. */
   setStreamStatus: (status: PresentationStreamStatus) => void;
@@ -390,7 +393,21 @@ export const aggregateJobStreamStatus = (
  * never enter the store, and malformed payloads are projected as `invalid`.
  * ------------------------------------------------------------------------ */
 
-const JOB_FIELDS = ['jobId', 'state', 'createdAt', 'updatedAt', 'artifactIds', 'error'] as const;
+const JOB_FIELDS = [
+  'jobId',
+  'state',
+  'createdAt',
+  'updatedAt',
+  'artifactIds',
+  'error',
+  'title',
+  'aspectRatio',
+  'projectId',
+  'versionId',
+  'messages',
+  'revisions',
+  'slideCount',
+] as const;
 const ARTIFACT_FIELDS = [
   'artifactId',
   'type',
@@ -940,6 +957,42 @@ export const createPresentationStudioStore = (
       }
     },
 
+    sendMessage: async (jobId, input) => {
+      try {
+        if (!client.sendPresentationMessage)
+          throw Object.assign(new Error('Conversation updates are unavailable'), {
+            code: 'PROVIDER_UNAVAILABLE',
+          });
+        const job = await client.sendPresentationMessage(jobId, input);
+        set((s) => ({ jobs: { ...s.jobs, [jobId]: job }, clientError: null }));
+        return true;
+      } catch (error) {
+        set({ clientError: toPresentationError(error) });
+        return false;
+      }
+    },
+
+    restoreJobList: async () => {
+      if (!client.listPresentationJobs) return [];
+      try {
+        const jobs = await client.listPresentationJobs();
+        set((s) => ({
+          jobs: { ...Object.fromEntries(jobs.map((job) => [job.jobId, job])), ...s.jobs },
+          jobOrder: [...new Set([...s.jobOrder, ...jobs.map((job) => job.jobId)])],
+          jobTitles: {
+            ...Object.fromEntries(
+              jobs.filter((job) => job.title).map((job) => [job.jobId, job.title!]),
+            ),
+            ...s.jobTitles,
+          },
+        }));
+        return jobs.map((job) => job.jobId);
+      } catch (error) {
+        set({ clientError: toPresentationError(error) });
+        return [];
+      }
+    },
+
     refreshJob: async (jobId) => {
       if (get().pendingActions[jobId] === 'refresh') return;
 
@@ -948,7 +1001,7 @@ export const createPresentationStudioStore = (
         const job = await client.getPresentationJob(jobId);
         if (job) {
           const newArtifacts: Record<string, ArtifactSnapshot> = {};
-          if (job.state === 'completed' && job.artifactIds && job.artifactIds.length > 0) {
+          if (job.artifactIds && job.artifactIds.length > 0) {
             const missingIds = job.artifactIds.filter((id) => !get().artifacts[id]);
             if (missingIds.length > 0) {
               const snapshots = await Promise.all(
@@ -996,6 +1049,7 @@ export const createPresentationStudioStore = (
                   }
                 : s.generationProgressByJob,
               jobOrder: s.jobOrder.includes(jobId) ? s.jobOrder : [jobId, ...s.jobOrder],
+              jobTitles: job.title ? { ...s.jobTitles, [jobId]: job.title } : s.jobTitles,
               jobs: { ...s.jobs, [jobId]: job },
               pendingActions: { ...s.pendingActions, [jobId]: undefined },
               selectedArtifactId,
@@ -1153,12 +1207,13 @@ export const createPresentationStudioStore = (
     },
 
     selectJob: (jobId) => {
-      if (typeof window !== 'undefined' && window.sessionStorage && jobId) {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
         try {
-          window.sessionStorage.setItem('presentation_studio_active_job_id', jobId);
+          if (jobId) window.sessionStorage.setItem('presentation_studio_active_job_id', jobId);
+          else window.sessionStorage.removeItem('presentation_studio_active_job_id');
         } catch {}
       }
-      const job = get().jobs[jobId];
+      const job = jobId ? get().jobs[jobId] : undefined;
       const firstArtifact = job?.artifactIds?.[0] ?? null;
 
       set({

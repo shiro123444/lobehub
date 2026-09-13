@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Context } from './context';
+import { Context } from './context';
 import { PluginManager } from './index';
+import { ToolRegistry } from './tool';
 import type { RuntimePluginManifest } from './types';
 
 const manifest = (
@@ -18,6 +19,30 @@ const manifest = (
 });
 
 describe('@lobechat/cordis-kernel PluginManager', () => {
+  it('disposes an uncommitted candidate so a late dependency cannot activate it', async () => {
+    const manager = new PluginManager([
+      manifest('adapter', '1', (ctx) => {
+        ctx.provide('value', 'v1');
+      }),
+    ]);
+    await manager.mount('adapter');
+    manager.install(
+      manifest(
+        'adapter',
+        '2',
+        (ctx) => {
+          ctx.provide('value', 'v2');
+        },
+        ['later'],
+      ),
+    );
+    await manager.reload('adapter');
+    manager.context.provide('later', {});
+    await manager.context.flushPending();
+    expect(manager.context.get('value')).toBe('v1');
+    expect(manager.context.getFibers().filter((fiber) => fiber.name === 'adapter')).toHaveLength(1);
+    await manager.context.dispose();
+  });
   it('mounts a built-in manifest and is idempotent', async () => {
     let starts = 0;
     const manager = new PluginManager([
@@ -137,5 +162,189 @@ describe('@lobechat/cordis-kernel PluginManager', () => {
     }
 
     expect(error).toMatchObject({ code: 'PLUGIN_DUPLICATE' });
+  });
+
+  it('supports dynamically installing, mounting, and uninstalling plugins at runtime', async () => {
+    let disposed = false;
+    const manager = new PluginManager();
+    expect(manager.has('dynamic')).toBe(false);
+
+    manager.install(
+      manifest('dynamic', '1.0.0', (ctx) => {
+        ctx.effect(() => () => {
+          disposed = true;
+        });
+      }),
+    );
+
+    expect(manager.has('dynamic')).toBe(true);
+    expect(manager.getState('dynamic')).toBe('installed');
+
+    await manager.mount('dynamic');
+    expect(manager.getState('dynamic')).toBe('active');
+
+    await manager.uninstall('dynamic');
+    expect(disposed).toBe(true);
+    expect(manager.has('dynamic')).toBe(false);
+  });
+
+  it('accepts an injected context sharing services with plugins', async () => {
+    const { Context } = await import('./context');
+    const customContext = new Context();
+    customContext.provide('shared.config', { mode: 'microkernel' });
+
+    let receivedMode = '';
+    const manager = new PluginManager([], customContext);
+    manager.install(
+      manifest(
+        'config-consumer',
+        '1.0.0',
+        (ctx) => {
+          const config = (ctx as any).get('shared.config');
+          receivedMode = config?.mode;
+        },
+        ['shared.config'],
+      ),
+    );
+
+    await manager.mount('config-consumer');
+    expect(receivedMode).toBe('microkernel');
+  });
+
+  it('isolates candidate fiber tools during reload and promotes atomically without TOOL_DUPLICATE', async () => {
+    const context = new Context();
+    const toolRegistry = new ToolRegistry();
+    context.provide('cordis.tools', toolRegistry);
+
+    const manager = new PluginManager(
+      [
+        manifest('calc', '1.0.0', (ctx) => {
+          toolRegistry.register(ctx, {
+            description: 'v1 add',
+            execute: (args: any) => args.a + args.b,
+            inputSchema: {},
+            name: 'add',
+          });
+        }),
+        manifest('calc', '2.0.0', (ctx) => {
+          toolRegistry.register(ctx, {
+            description: 'v2 add with logging',
+            execute: (args: any) => (args.a + args.b) * 10,
+            inputSchema: {},
+            name: 'add',
+          });
+        }),
+      ],
+      context,
+    );
+
+    await manager.mount('calc');
+    expect(toolRegistry.list().map((t) => t.name)).toEqual(['add']);
+    expect(await toolRegistry.execute('add', { a: 2, b: 3 }, context as any)).toBe(5);
+
+    // Reloading to 2.0.0 must NOT collide on duplicate tool registration 'add'
+    expect(await manager.reload('calc')).toBe('active');
+    expect(toolRegistry.list().map((t) => t.name)).toEqual(['add']);
+    expect(await toolRegistry.execute('add', { a: 2, b: 3 }, context as any)).toBe(50);
+  });
+
+  it('keeps active service and tools 100% intact when candidate activation fails', async () => {
+    const context = new Context();
+    const toolRegistry = new ToolRegistry();
+    context.provide('cordis.tools', toolRegistry);
+
+    const manager = new PluginManager(
+      [
+        manifest('svc', '1.0.0', (ctx) => {
+          ctx.provide('svc.api', { version: 1 });
+          toolRegistry.register(ctx, {
+            description: 'v1 tool',
+            execute: () => 'v1-result',
+            inputSchema: {},
+            name: 'svcTool',
+          });
+        }),
+        manifest('svc', '2.0.0', (ctx) => {
+          ctx.provide('svc.api', { version: 2 });
+          toolRegistry.register(ctx, {
+            description: 'v2 tool',
+            execute: () => 'v2-result',
+            inputSchema: {},
+            name: 'svcTool',
+          });
+          throw new Error('candidate exploded');
+        }),
+      ],
+      context,
+    );
+
+    await manager.mount('svc');
+    expect(await manager.getState('svc')).toBe('active');
+    expect((context.get('svc.api') as any)?.version).toBe(1);
+
+    // Reload attempts v2, which explodes during activation
+    const reloadState = await manager.reload('svc');
+    expect(reloadState).toBe('active');
+    expect(await manager.getState('svc')).toBe('active');
+
+    // Live service must STILL be version 1, not wiped or corrupted
+    expect((context.get('svc.api') as any)?.version).toBe(1);
+    // Live tool must STILL execute v1
+    expect(await toolRegistry.execute('svcTool', {}, context as any)).toBe('v1-result');
+  });
+
+  it('version reload does not oscillate and supports targetVersion selection', async () => {
+    let activeVersion = '';
+    const manager = new PluginManager([
+      manifest('versioned', '1.0.0', () => {
+        activeVersion = '1.0.0';
+      }),
+      manifest('versioned', '2.0.0', () => {
+        activeVersion = '2.0.0';
+      }),
+    ]);
+
+    await manager.mount('versioned');
+    expect(activeVersion).toBe('1.0.0');
+
+    // Reload without targetVersion promotes to latest (2.0.0)
+    await manager.reload('versioned');
+    expect(activeVersion).toBe('2.0.0');
+
+    // Reload without targetVersion again remains on latest (2.0.0) - NO OSCILLATION!
+    await manager.reload('versioned');
+    expect(activeVersion).toBe('2.0.0');
+
+    // Explicit rollback to 1.0.0 via targetVersion
+    await manager.reload('versioned', undefined, '1.0.0');
+    expect(activeVersion).toBe('1.0.0');
+
+    // Non-existent version throws PLUGIN_NOT_FOUND
+    await expect(manager.reload('versioned', undefined, '9.9.9')).rejects.toMatchObject({
+      code: 'PLUGIN_NOT_FOUND',
+    });
+  });
+
+  it('serializes uninstall inside enqueue without race conditions', async () => {
+    let unmounted = false;
+    const manager = new PluginManager([
+      manifest('serial', '1.0.0', (ctx) => {
+        ctx.effect(() => () => {
+          unmounted = true;
+        });
+      }),
+    ]);
+
+    await manager.mount('serial');
+    expect(manager.getState('serial')).toBe('active');
+
+    // Concurrent uninstall and mount
+    const p1 = manager.uninstall('serial');
+    const p2 = manager.mount('serial').catch((err) => err);
+
+    await Promise.all([p1, p2]);
+    expect(unmounted).toBe(true);
+    expect(manager.has('serial')).toBe(false);
+    expect(await p2).toMatchObject({ code: 'PLUGIN_NOT_FOUND' });
   });
 });

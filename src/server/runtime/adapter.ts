@@ -11,6 +11,7 @@ export const RUNTIME_HTTP_COMMANDS = [
   'plugin.list',
   'plugin.mount',
   'plugin.unmount',
+  'plugin.reload',
 ] as const;
 
 export type RuntimeHttpCommand = (typeof RUNTIME_HTTP_COMMANDS)[number];

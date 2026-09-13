@@ -68,6 +68,7 @@ describe('PresentationGenerationWorkspace', () => {
       const artifactsMap = {
         'img-art-2': {
           artifactId: 'img-art-2',
+          metadata: { slideId: 'slide-2', order: 2 },
           createdAt: '2026-09-02T10:00:00.000Z',
           jobId: 'job-generating',
           mimeType: 'image/png',
@@ -77,6 +78,7 @@ describe('PresentationGenerationWorkspace', () => {
         },
         'svg-art-1': {
           artifactId: 'svg-art-1',
+          metadata: { slideId: 'slide-1', order: 1 },
           createdAt: '2026-09-02T10:00:00.000Z',
           jobId: 'job-generating',
           mimeType: 'image/svg+xml',
@@ -88,14 +90,14 @@ describe('PresentationGenerationWorkspace', () => {
 
       render(<PresentationGenerationWorkspace artifacts={artifactsMap} job={jobWithArtifacts} />);
 
-      const previewImg1 = screen.getByTestId('card-preview-svg-art-1');
+      const previewImg1 = screen.getByTestId('card-preview-slide-1');
       expect(previewImg1).toBeInTheDocument();
       expect(previewImg1).toHaveAttribute(
         'src',
         'data:image/svg+xml;utf8,<svg viewBox="0 0 100 100"><rect fill="blue" /></svg>',
       );
 
-      const previewImg2 = screen.getByTestId('card-preview-img-art-2');
+      const previewImg2 = screen.getByTestId('card-preview-slide-2');
       expect(previewImg2).toBeInTheDocument();
       expect(previewImg2).toHaveAttribute('src', 'https://example.com/slide2.png');
     });
@@ -114,6 +116,7 @@ describe('PresentationGenerationWorkspace', () => {
       const artifactsMap = {
         'done-art': {
           artifactId: 'done-art',
+          metadata: { slideId: 'slide-1', order: 1 },
           createdAt: '2026-09-02T10:00:00.000Z',
           jobId: 'job-generating',
           mimeType: 'image/svg+xml',
@@ -125,7 +128,7 @@ describe('PresentationGenerationWorkspace', () => {
 
       render(<PresentationGenerationWorkspace artifacts={artifactsMap} job={jobWithMix} />);
 
-      expect(screen.getByTestId('card-preview-done-art')).toHaveAttribute(
+      expect(screen.getByTestId('card-preview-slide-1')).toHaveAttribute(
         'src',
         'https://example.com/done.svg',
       );

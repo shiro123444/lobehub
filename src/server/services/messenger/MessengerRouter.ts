@@ -97,7 +97,7 @@ interface MessengerCommand {
 
 const HELP_TEXT = [
   'Commands:',
-  '• /start — bind (or rebind) your LobeHub account',
+  '• /start — bind (or rebind) your Qingzhou account',
   '• /agents — list your agents and switch the active one',
   '• /new — start a new conversation',
   '• /stop — stop the current execution',
@@ -154,15 +154,15 @@ const reconstructRequest = (req: Request, rawBody: string): Request =>
 
 /**
  * Routes inbound messages from the shared Messenger bots to the right
- * LobeHub user + agent.
+ * Qingzhou user + agent.
  *
  * **Multi-tenant routing (PR2)**: per-tenant platforms (Slack today) keep
  * one Chat SDK instance per `installationKey` (e.g. `slack:T0123`). Global-
  * bot platforms (Telegram, future Discord) collapse to a single bot per
  * platform via the special `telegram:singleton` key.
  *
- * Account model: each `(LobeHub user, platform, tenant_id)` triple has at
- * most one row in `messenger_account_links`, so a single LobeHub user can
+ * Account model: each `(Qingzhou user, platform, tenant_id)` triple has at
+ * most one row in `messenger_account_links`, so a single Qingzhou user can
  * link into multiple Slack workspaces simultaneously without collisions.
  *
  * **Platform abstraction**: command logic and tap-action handling live in a
@@ -658,7 +658,7 @@ export class MessengerRouter {
 
     // Channel-join welcome (Slack `member_joined_channel`). Counterpart to the
     // App Home `Messages`-tab welcome in `handleAppHomeOpened` — the marketplace
-    // listing reviewers also test the `/invite @LobeHub` entry point, so the
+    // listing reviewers also test the `/invite @Qingzhou` entry point, so the
     // bot must speak up the first time it lands in a channel. Other events
     // (regular members joining) are filtered out by the `botUserId` check.
     bot.onMemberJoinedChannel(async (event) => {
@@ -687,7 +687,7 @@ export class MessengerRouter {
   private buildCommands(): MessengerCommand[] {
     return [
       {
-        description: 'Bind your account to LobeHub',
+        description: 'Bind your account to Qingzhou',
         handler: async (ctx) => {
           // Already-linked short-circuit: re-running `/start` while bound
           // would issue a fresh verify-im token and, on completion,
@@ -698,7 +698,7 @@ export class MessengerRouter {
           // reply. Treat `/start` as the unbound-only onboarding command.
           if (ctx.link) {
             await ctx.reply(
-              'Your account is already linked to LobeHub. Send /agents to switch the active agent, or /new to start a fresh conversation.',
+              'Your account is already linked to Qingzhou. Send /agents to switch the active agent, or /new to start a fresh conversation.',
             );
             return;
           }
@@ -731,7 +731,7 @@ export class MessengerRouter {
           // For the Slack ephemeral path the prompt is already inline, a
           // second "check your DM" would be misleading.
           if (!ctx.isDM && !canEphemeralInChannel) {
-            await ctx.reply('Check your DM with LobeHub for the link button.');
+            await ctx.reply('Check your DM with Qingzhou for the link button.');
           }
         },
         name: 'start',
@@ -754,7 +754,9 @@ export class MessengerRouter {
             // Slash dispatch has no chat-sdk Thread; setState lives on the
             // thread instance, so direct the user back to the DM where the
             // text path can pick the command up.
-            await ctx.reply('Open your direct message with the LobeHub bot and send `/new` there.');
+            await ctx.reply(
+              'Open your direct message with the Qingzhou bot and send `/new` there.',
+            );
             return;
           }
           // Drop the cached topicId so the next message starts a fresh topic.
@@ -777,7 +779,7 @@ export class MessengerRouter {
           }
           if (!ctx.thread) {
             await ctx.reply(
-              'Open your direct message with the LobeHub bot and send `/stop` there.',
+              'Open your direct message with the Qingzhou bot and send `/stop` there.',
             );
             return;
           }
@@ -956,7 +958,7 @@ export class MessengerRouter {
 
     const userAgents = await this.fetchUserAgents(serverDB, link.userId);
     if (userAgents.length === 0) {
-      await ctx.reply('You have no agents yet. Create one in LobeHub, then come back to /agents.');
+      await ctx.reply('You have no agents yet. Create one in Qingzhou, then come back to /agents.');
       return;
     }
 
@@ -1071,8 +1073,8 @@ export class MessengerRouter {
       }
 
       const text = activeAgentName
-        ? `Welcome to LobeHub! Your active agent is *${activeAgentName}*. Send a message to chat, or use \`/agents\` to switch.`
-        : 'Welcome to LobeHub! Send `/agents` to pick an active agent and start chatting.';
+        ? `Welcome to Qingzhou! Your active agent is *${activeAgentName}*. Send a message to chat, or use \`/agents\` to switch.`
+        : 'Welcome to Qingzhou! Send `/agents` to pick an active agent and start chatting.';
       await bot.binder.sendDmText(event.channelId, text);
     } catch (error) {
       log('handleAppHomeOpened: dispatch failed: %O', error);
@@ -1081,7 +1083,7 @@ export class MessengerRouter {
 
   /**
    * Slack `member_joined_channel` welcome. Fires the first time the bot
-   * itself joins a channel (via `/invite @LobeHub` or being added through the
+   * itself joins a channel (via `/invite @Qingzhou` or being added through the
    * channel settings). Slack retries `member_joined_channel` aggressively on
    * 5xx, and re-adding-then-removing-then-re-adding a bot would fire it again,
    * so `setIfNotExists` keys on the channel id to keep the greeting one-shot.
@@ -1107,10 +1109,10 @@ export class MessengerRouter {
     }
 
     const text = [
-      ":wave: Hi, I'm *LobeHub* — your AI agent in Slack.",
+      ":wave: Hi, I'm *Qingzhou* — your AI agent in Slack.",
       '',
-      '• Mention me with `@LobeHub <your question>` to chat in this channel.',
-      '• First time? Send me a *direct message* to link your LobeHub account.',
+      '• Mention me with `@Qingzhou <your question>` to chat in this channel.',
+      '• First time? Send me a *direct message* to link your Qingzhou account.',
       '• Use `/agents` in DM to switch the active agent.',
     ].join('\n');
 
@@ -1243,7 +1245,7 @@ export class MessengerRouter {
     const bridge = new AgentBridgeService(serverDB, link.userId);
 
     // Messenger account-link routing already binds platform sender →
-    // LobeHub user; the dispatch only fires for the linked sender. So
+    // Qingzhou user; the dispatch only fires for the linked sender. So
     // `isOwner` is true iff the inbound message's `author.userId` matches
     // the linked `platformUserId`. `buildBotContext` enforces the
     // fail-closed default (never trust when either side is missing).

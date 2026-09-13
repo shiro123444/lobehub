@@ -1,14 +1,15 @@
 import { Button, Icon } from '@lobehub/ui';
+import { Popover } from 'antd';
 import { ChevronLeft, ChevronRight, CircleStop } from 'lucide-react';
-import { memo, type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   ArtifactSnapshot,
   PresentationJob,
 } from '../../../packages/runtime-contracts/src/index';
 import {
-  usePresentationStudioStore,
   type PresentationStreamStatus,
+  usePresentationStudioStore,
 } from './store/presentationStore';
 import { styles } from './style';
 
@@ -66,43 +67,6 @@ const SlowTypewriterTitle = memo(() => {
 });
 SlowTypewriterTitle.displayName = 'SlowTypewriterTitle';
 
-const useActionTypewriter = (targetText: string) => {
-  const [sentence, setSentence] = useState(targetText);
-  const [charIndex, setCharIndex] = useState(targetText.length);
-  const nextSentence = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (targetText !== sentence) nextSentence.current = targetText;
-  }, [sentence, targetText]);
-
-  useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
-      setSentence(targetText);
-      setCharIndex(targetText.length);
-      nextSentence.current = null;
-      return;
-    }
-
-    const timer = setTimeout(
-      () => {
-        if (charIndex < sentence.length) {
-          setCharIndex((value) => value + 1);
-          return;
-        }
-        if (nextSentence.current && nextSentence.current !== sentence) {
-          setSentence(nextSentence.current);
-          nextSentence.current = null;
-          setCharIndex(0);
-        }
-      },
-      charIndex < sentence.length ? 24 : 160,
-    );
-    return () => clearTimeout(timer);
-  }, [charIndex, sentence, targetText]);
-
-  return sentence.slice(0, charIndex);
-};
-
 const conciseActivityFor = (job: PresentationJob): string => {
   const record = job as unknown as Record<string, unknown>;
   // `message` often contains the original user prompt; never echo that into
@@ -153,8 +117,7 @@ const PresentationGenerationWorkspace = memo<PresentationGenerationWorkspaceProp
         .filter(
           (artifact) =>
             artifact.type === 'svg' ||
-            artifact.type === 'image' ||
-            artifact.mimeType?.startsWith('image/'),
+            (artifact.metadata?.slideId !== undefined && artifact.mimeType?.startsWith('image/')),
         );
       const knownBySlide = new Map<number, ArtifactSnapshot>();
       slideArtifacts.forEach((artifact, fallbackIndex) => {
@@ -167,7 +130,7 @@ const PresentationGenerationWorkspace = memo<PresentationGenerationWorkspaceProp
       if (count === 0) return [];
       return Array.from({ length: count }, (_, index) => {
         const slideIndex = index + 1;
-        const artifact = knownBySlide.get(slideIndex) ?? slideArtifacts[index];
+        const artifact = knownBySlide.get(slideIndex);
         const metadata = artifact?.metadata as Record<string, unknown> | undefined;
         const slideId =
           typeof metadata?.slideId === 'string' && metadata.slideId.trim()
@@ -191,21 +154,14 @@ const PresentationGenerationWorkspace = memo<PresentationGenerationWorkspaceProp
     const isPlanning = cards.length === 0;
 
     useEffect(() => {
-      if (currentSlideIndex === undefined || cards.length === 0) return;
+      if (
+        currentSlideIndex === undefined ||
+        cards.length === 0 ||
+        Date.now() < userNavigationUntil.current
+      )
+        return;
       setActiveIndex(Math.max(0, Math.min(cards.length - 1, currentSlideIndex - 1)));
     }, [cards.length, currentSlideIndex]);
-
-    useEffect(() => {
-      if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
-      const timer = setInterval(
-        () => {
-          if (Date.now() < userNavigationUntil.current) return;
-          setActiveIndex((index) => (index + 1) % visualCards.length);
-        },
-        isPlanning ? 1800 : 2400,
-      );
-      return () => clearInterval(timer);
-    }, [isPlanning, visualCards.length]);
 
     const move = useCallback(
       (direction: number) => {
@@ -232,7 +188,7 @@ const PresentationGenerationWorkspace = memo<PresentationGenerationWorkspaceProp
       [move],
     );
 
-    const actionText = useActionTypewriter(conciseActivityFor(job));
+    const actionText = streamStatus === 'reconnecting' ? '正在恢复连接' : conciseActivityFor(job);
 
     return (
       <section
@@ -283,55 +239,77 @@ const PresentationGenerationWorkspace = memo<PresentationGenerationWorkspaceProp
               } as CSSProperties;
 
               return (
-                <div
-                  aria-label={
-                    card.isPlaceholder
-                      ? '等待生成页面'
-                      : card.slideId
-                        ? `第 ${card.slideIndex} 页正在制作 (${card.slideId})`
-                        : `第 ${card.slideIndex} 页正在制作`
-                  }
-                  className={`${styles.generationCard} ${
-                    isActive ? styles.generationCardActive : styles.generationCardAdjacent
-                  } ${isGenerating ? styles.generationCardGenerating : ''} ${
-                    card.isPlaceholder ? styles.generationCardWaiting : ''
-                  }`}
-                  data-active={isActive ? 'true' : undefined}
-                  data-slide-id={card.slideId}
-                  data-testid={
-                    card.isPlaceholder && index === 0
-                      ? 'generation-waiting-card'
-                      : `presentation-card-${card.id}`
-                  }
+                <Popover
                   key={`slide-slot-${card.slideIndex}`}
-                  style={cardStyle}
-                  onClick={() => selectCard(index)}
+                  placement="top"
+                  trigger={['hover', 'focus', 'click']}
+                  content={
+                    previewSrc ? (
+                      <img
+                        alt={`第 ${card.slideIndex} 页已完成部分`}
+                        src={previewSrc}
+                        style={{
+                          display: 'block',
+                          width: 'min(68vw, 720px)',
+                          maxHeight: '60dvh',
+                          objectFit: 'contain',
+                          borderRadius: 12,
+                        }}
+                      />
+                    ) : null
+                  }
                 >
-                  {previewSrc ? (
-                    <img
-                      alt={`第 ${card.slideIndex} 页预览`}
-                      className={styles.generationCardPreview}
-                      data-testid={`card-preview-${card.id}`}
-                      src={previewSrc}
-                    />
-                  ) : (
-                    <div aria-hidden="true" className={styles.generationCardSkeleton}>
-                      <div className={styles.generationCardChrome} />
-                      <div className={styles.generationCardLine} />
-                      <div className={styles.generationCardLineShort} />
-                    </div>
-                  )}
-                  {!card.isPlaceholder && (
-                    <div
-                      aria-hidden="true"
-                      className={styles.generationCardOverlay}
-                      data-testid={`card-hover-preview-${card.id}`}
-                    >
-                      <span>{card.label}</span>
-                      <small>{card.isCompleted ? '素材已就绪' : '正在生成素材'}</small>
-                    </div>
-                  )}
-                </div>
+                  <button
+                    data-active={isActive ? 'true' : undefined}
+                    data-slide-id={card.slideId}
+                    key={`slide-slot-${card.slideIndex}`}
+                    style={cardStyle}
+                    type="button"
+                    aria-label={
+                      card.isPlaceholder
+                        ? '等待生成页面'
+                        : card.slideId
+                          ? `第 ${card.slideIndex} 页正在制作 (${card.slideId})`
+                          : `第 ${card.slideIndex} 页正在制作`
+                    }
+                    className={`${styles.generationCard} ${
+                      isActive ? styles.generationCardActive : styles.generationCardAdjacent
+                    } ${isGenerating ? styles.generationCardGenerating : ''} ${
+                      card.isPlaceholder ? styles.generationCardWaiting : ''
+                    }`}
+                    data-testid={
+                      card.isPlaceholder && index === 0
+                        ? 'generation-waiting-card'
+                        : `presentation-card-${card.id}`
+                    }
+                    onClick={() => selectCard(index)}
+                  >
+                    {previewSrc ? (
+                      <img
+                        alt={`第 ${card.slideIndex} 页预览`}
+                        className={styles.generationCardPreview}
+                        data-testid={`card-preview-${card.id}`}
+                        src={previewSrc}
+                      />
+                    ) : (
+                      <div aria-hidden="true" className={styles.generationCardSkeleton}>
+                        <div className={styles.generationCardChrome} />
+                        <div className={styles.generationCardLine} />
+                        <div className={styles.generationCardLineShort} />
+                      </div>
+                    )}
+                    {!card.isPlaceholder && !previewSrc && (
+                      <div
+                        aria-hidden="true"
+                        className={styles.generationCardOverlay}
+                        data-testid={`card-hover-preview-${card.id}`}
+                      >
+                        <span>{card.label}</span>
+                        <small>{card.isCompleted ? '草稿已就绪' : '等待页面草稿'}</small>
+                      </div>
+                    )}
+                  </button>
+                </Popover>
               );
             })}
           </div>

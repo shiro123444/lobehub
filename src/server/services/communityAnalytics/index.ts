@@ -1,24 +1,23 @@
-import dayjs from 'dayjs';
-import debug from 'debug';
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { constants as fsConstants } from 'node:fs';
-import { readFile, access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { AsyncTaskStatus } from '@lobechat/types';
+import dayjs from 'dayjs';
+import debug from 'debug';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 
 import {
   agentOperations,
   asyncTasks,
   generationBatches,
-  generationTopics,
   generations,
+  generationTopics,
   messages,
   users,
 } from '@/database/schemas';
 import { type LobeChatDatabase } from '@/database/type';
 import { genRangeWhere, genWhere } from '@/database/utils/genWhere';
-import { type MessageMetadata } from '@/types/message';
 import {
   type CommunityUsageDailyRecord,
   type CommunityUsageMetric,
@@ -27,6 +26,7 @@ import {
   type CommunityUsageRankItem,
   type CommunityUsageSource,
 } from '@/types/communityAnalytics';
+import { type MessageMetadata } from '@/types/message';
 import { formatDate } from '@/utils/format';
 
 const log = debug('lobe-community:analytics');
@@ -143,7 +143,10 @@ export class CommunityAnalyticsService {
     this.db = db;
   }
 
-  private async loadNexusBillingEvents(startAt: string, endAt: string): Promise<{
+  private async loadNexusBillingEvents(
+    startAt: string,
+    endAt: string,
+  ): Promise<{
     events: UsageEvent[];
     source: CommunityUsageOverview['nexusSource'];
   }> {
@@ -165,7 +168,8 @@ export class CommunityAnalyticsService {
           return (
             (timestamp.isAfter(dayjs(startAt).subtract(1, 'millisecond')) ||
               timestamp.isSame(dayjs(startAt), 'day')) &&
-            (timestamp.isBefore(dayjs(endAt).add(1, 'day')) || timestamp.isSame(dayjs(endAt), 'day'))
+            (timestamp.isBefore(dayjs(endAt).add(1, 'day')) ||
+              timestamp.isSame(dayjs(endAt), 'day'))
           );
         })
         .map<UsageEvent>((record) => {
@@ -195,14 +199,17 @@ export class CommunityAnalyticsService {
           date_to: `${endAt}T23:59:59.999Z`,
           limit: '10000',
         });
-        const response = await fetch(`${remoteUrl.replace(/\/$/, '')}/admin/billing?${searchParams}`, {
-          headers: { 'x-admin-key': adminKey },
-        });
+        const response = await fetch(
+          `${remoteUrl.replace(/\/$/, '')}/admin/billing?${searchParams}`,
+          {
+            headers: { 'x-admin-key': adminKey },
+          },
+        );
 
         if (response.ok) {
           const data = (await response.json()) as { records?: BillingRecord[] };
           const records = Array.isArray(data.records) ? data.records : [];
-          log('Loaded %d NEXUS billing records from remote gateway', records.length);
+          log('Loaded %d Qingzhou billing records from remote gateway', records.length);
           return {
             events: parseRecords(records),
             source: 'remote',
@@ -227,7 +234,7 @@ export class CommunityAnalyticsService {
             log('Skip malformed billing record in %s: %O', candidate, error);
           }
         }
-        log('Loaded %d NEXUS billing records from %s', records.length, candidate);
+        log('Loaded %d Qingzhou billing records from %s', records.length, candidate);
         return {
           events: parseRecords(records),
           source: 'file',
@@ -324,7 +331,9 @@ export class CommunityAnalyticsService {
       provider: row.provider ?? null,
       source: 'agent',
       spend: clampNumber(row.totalCost),
-      totalTokens: clampNumber(row.totalTokens || clampNumber(row.totalInputTokens) + clampNumber(row.totalOutputTokens)),
+      totalTokens: clampNumber(
+        row.totalTokens || clampNumber(row.totalInputTokens) + clampNumber(row.totalOutputTokens),
+      ),
       userId: row.userId,
     }));
   }
@@ -470,7 +479,9 @@ export class CommunityAnalyticsService {
       }
 
       if (event.provider) {
-        const provider = getRankItem(providerMap, event.provider, event.provider, { source: event.source });
+        const provider = getRankItem(providerMap, event.provider, event.provider, {
+          source: event.source,
+        });
         addMetric(provider, metric);
       }
 
@@ -497,7 +508,11 @@ export class CommunityAnalyticsService {
       const start = dayjs(range.startAt);
       const end = dayjs(range.endAt);
       const result: CommunityUsageDailyRecord[] = [];
-      for (let cursor = start; cursor.isBefore(end) || cursor.isSame(end, 'day'); cursor = cursor.add(1, 'day')) {
+      for (
+        let cursor = start;
+        cursor.isBefore(end) || cursor.isSame(end, 'day');
+        cursor = cursor.add(1, 'day')
+      ) {
         const day = cursor.format('YYYY-MM-DD');
         result.push(
           dailyMap.get(day) ?? {
@@ -515,7 +530,9 @@ export class CommunityAnalyticsService {
       values: T[],
     ) =>
       values
-        .toSorted((a, b) => b.totalTokens - a.totalTokens || b.spend - a.spend || b.requests - a.requests)
+        .toSorted(
+          (a, b) => b.totalTokens - a.totalTokens || b.spend - a.spend || b.requests - a.requests,
+        )
         .map((item) => ({ ...item }));
 
     return {
@@ -524,10 +541,14 @@ export class CommunityAnalyticsService {
       modelRanking: toSortedArray([...modelMap.values()]),
       subjectRanking: toSortedArray([...subjectMap.values()]),
       pathRanking: [...pathMap.values()]
-        .toSorted((a, b) => b.requests - a.requests || b.totalTokens - a.totalTokens || b.spend - a.spend)
+        .toSorted(
+          (a, b) => b.requests - a.requests || b.totalTokens - a.totalTokens || b.spend - a.spend,
+        )
         .map((item) => ({ ...item })),
       providerRanking: [...providerMap.values()]
-        .toSorted((a, b) => b.totalTokens - a.totalTokens || b.spend - a.spend || b.requests - a.requests)
+        .toSorted(
+          (a, b) => b.totalTokens - a.totalTokens || b.spend - a.spend || b.requests - a.requests,
+        )
         .map((item) => ({ ...item })),
       sourceSummary: SOURCES.map((source) => ({
         ...sourceTotals[source],
@@ -544,7 +565,9 @@ export class CommunityAnalyticsService {
         activeSubjects: subjects.size,
       },
       apiKeyRanking: [...apiKeyMap.values()]
-        .toSorted((a, b) => b.spend - a.spend || b.totalTokens - a.totalTokens || b.requests - a.requests)
+        .toSorted(
+          (a, b) => b.spend - a.spend || b.totalTokens - a.totalTokens || b.requests - a.requests,
+        )
         .map((item) => ({ ...item })),
       userRanking: toSortedArray([...userMap.values()]),
     };
@@ -582,9 +605,12 @@ export class CommunityAnalyticsService {
       this.loadNexusBillingEvents(range.startAt, range.endAt),
     ]);
 
-    const events = [...chatEvents, ...agentEvents, ...generationEvents, ...nexusResult.events].toSorted(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-    );
+    const events = [
+      ...chatEvents,
+      ...agentEvents,
+      ...generationEvents,
+      ...nexusResult.events,
+    ].toSorted((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const userLabels = await this.loadUserLabels(events);
 
     return {

@@ -1,4 +1,4 @@
-import { BRANDING_LOGO_URL, BRANDING_NAME, ORG_NAME } from '@lobechat/business-const';
+import { BRANDING_LOGO_URL, BRANDING_NAME } from '@lobechat/business-const';
 import { OG_URL } from '@lobechat/const';
 
 import { DEFAULT_LANG } from '@/const/locale';
@@ -56,7 +56,7 @@ export const generateMetadata = async (props: DynamicLayoutProps) => {
       card: 'summary_large_image',
       description: t('chat.description', { appName: BRANDING_NAME }),
       images: [OG_URL],
-      site: isCustomORG ? `@${ORG_NAME}` : '@lobehub',
+      site: isCustomORG ? '@Qingzhou' : '@lobehub',
       title: t('chat.title', { appName: BRANDING_NAME }),
     },
   };

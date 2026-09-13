@@ -41,7 +41,7 @@ export const BuiltinAgentSkillDetailProvider = ({
   });
 
   const value: DetailContextValue = {
-    author: 'LobeHub',
+    author: 'Qingzhou',
     authorUrl: appOrigin,
     config: null as any,
     description: skill.description,

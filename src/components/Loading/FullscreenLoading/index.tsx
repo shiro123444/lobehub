@@ -7,7 +7,7 @@ import { type StageItem } from '@/components/InitProgress';
 import InitProgress from '@/components/InitProgress';
 import { isCustomBranding } from '@/const/version';
 
-import NexusBrandLoading from '../NexusBrandLoading';
+import QingzhouBrandLoading from '../QingzhouBrandLoading';
 
 interface FullscreenLoadingProps {
   activeStage: number;
@@ -20,7 +20,7 @@ const FullscreenLoading = memo<FullscreenLoadingProps>(({ activeStage, stages, c
     <Flexbox height={'100%'} style={{ position: 'relative', userSelect: 'none' }} width={'100%'}>
       <Center flex={1} gap={16} width={'100%'}>
         {isCustomBranding ? (
-          <NexusBrandLoading variant="hero" />
+          <QingzhouBrandLoading variant="hero" />
         ) : (
           <ProductLogo size={48} type={'combine'} />
         )}

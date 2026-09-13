@@ -18,6 +18,7 @@ import { getBusinessModelRuntimeHooks } from '@/business/server/model-runtime';
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { type LobeChatDatabase } from '@/database/type';
 import { getLLMConfig } from '@/envs/llm';
+import { loadProductionGLMChatProviderConfig } from '@/server/runtime/presentation/production-multimodal-chat-config';
 
 import { KeyVaultsGateKeeper } from '../KeyVaultsEncrypt';
 import apiKeyManager from './apiKeyManager';
@@ -367,7 +368,7 @@ export const initModelRuntimeWithUserPayload = (
     return new ModelRuntime(runtime, hooks);
   }
 
-  return ModelRuntime.initializeWithProvider(
+  const runtime = ModelRuntime.initializeWithProvider(
     runtimeProvider,
     {
       ...getParamsFromPayload(runtimeProvider, payload),
@@ -375,6 +376,20 @@ export const initModelRuntimeWithUserPayload = (
     },
     hooks,
   );
+  if (provider === ModelProvider.Nexus && process.env.ANTHROPIC_AUTH_TOKEN) {
+    const config = loadProductionGLMChatProviderConfig({ ...process.env });
+    const chatRuntime = ModelRuntime.initializeWithProvider(
+      ModelProvider.Nexus,
+      {
+        ...params,
+        apiKey: config.apiKey,
+        baseURL: config.endpoint.replace(/\/chat\/completions$/, ''),
+      },
+      hooks,
+    );
+    runtime.chat = (input, options) => chatRuntime.chat({ ...input, model: config.model }, options);
+  }
+  return runtime;
 };
 
 /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryPresentationArtifactStore } from './artifact-store';
+
 import { persistPresentationWorkerArtifacts } from './artifact-bridge';
+import { InMemoryPresentationArtifactStore } from './artifact-store';
 
 const scope = { userId: 'u', sessionId: 's' };
 const result = {
@@ -105,7 +106,7 @@ describe('C-55 artifact bridge', () => {
         mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         status: 'ready',
         type: 'pptx',
-        uri: '/api/runtime/presentation/artifacts/job-multi%3Adeck.pptx',
+        uri: '/api/runtime/presentation/artifacts/job-multi%3Adeck.pptx?raw=true',
       },
       status: 'ready',
       type: 'pptx',
@@ -120,7 +121,7 @@ describe('C-55 artifact bridge', () => {
         slideId: 'slide-1',
         status: 'ready',
         type: 'svg',
-        uri: '/api/runtime/presentation/artifacts/job-multi%3Aslide-1.svg',
+        uri: '/api/runtime/presentation/artifacts/job-multi%3Aslide-1.svg?raw=true',
       },
       status: 'ready',
       type: 'svg',
@@ -135,7 +136,7 @@ describe('C-55 artifact bridge', () => {
         slideId: 'slide-1',
         status: 'ready',
         type: 'image',
-        uri: '/api/runtime/presentation/artifacts/job-multi%3Ahero.png',
+        uri: '/api/runtime/presentation/artifacts/job-multi%3Ahero.png?raw=true',
       },
       status: 'ready',
       type: 'image',

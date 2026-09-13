@@ -60,6 +60,9 @@ const commandFor = (request: Request, segments: string[]): string => {
     if (segments.length === 3 && method === 'POST' && segments[2] === 'unmount') {
       return 'plugin.unmount';
     }
+    if (segments.length === 3 && method === 'POST' && segments[2] === 'reload') {
+      return 'plugin.reload';
+    }
   }
   return 'runtime.route.not_found';
 };
@@ -86,7 +89,9 @@ const pathPayload = (
       ...(afterSeq === undefined ? {} : { after_seq: afterSeq }),
     };
   }
-  if (command === 'plugin.mount' || command === 'plugin.unmount') return { id: segments[1] };
+  if (command === 'plugin.mount' || command === 'plugin.unmount' || command === 'plugin.reload') {
+    return { id: segments[1] };
+  }
   return {};
 };
 

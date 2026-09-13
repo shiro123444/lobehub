@@ -75,6 +75,10 @@ export class Fiber implements FiberContract {
     if (index >= 0) this.children.splice(index, 1);
   }
 
+  getChildren(): readonly Fiber[] {
+    return this.children;
+  }
+
   assertMountable(): void {
     if (this.state === 'unloading' || this.state === 'disposed') {
       throw new Error(`Cannot mount a plugin from inactive fiber "${this.name}"`);
@@ -248,6 +252,8 @@ export class Fiber implements FiberContract {
     if (this.resourcesDisposed) return;
     this.resourcesDisposed = true;
     this._state = 'unloading';
+
+    await this.ctx._disposeDependents(this);
 
     for (const child of [...this.children].reverse()) await child.dispose();
     this.children.length = 0;

@@ -1,13 +1,12 @@
 import { DEFAULT_MINI_SYSTEM_AGENT_ITEM } from '@lobechat/const';
+import { type LobeChatDatabase } from '@lobechat/database';
 import { type GenerateObjectSchema } from '@lobechat/model-runtime';
 import { RequestTrigger, SkillCategory } from '@lobechat/types';
-import { type LobeChatDatabase } from '@lobechat/database';
-import { z } from 'zod';
 import debug from 'debug';
+import { z } from 'zod';
 
 import { UserModel } from '@/database/models/user';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
-
 import type { NexusRegistryKind } from '@/types/nexusRegistry';
 
 const log = debug('nexus:registry:skill-intelligence');
@@ -171,7 +170,7 @@ const buildFallbackHumanInstallationNote = (input: {
   [
     input.repositoryUrl
       ? `Open ${input.repositoryUrl} and install or copy the ${input.name} skill files into your agent skill directory.`
-      : `Install ${input.name} from the Nexus skill page or import the ${input.identifier} skill package manually.`,
+      : `Install ${input.name} from the Qingzhou skill page or import the ${input.identifier} skill package manually.`,
     'Keep SKILL.md together with any resource files shipped with the skill.',
   ].join('\n\n');
 
@@ -236,9 +235,7 @@ const buildPrompt = (input: NexusRegistrySkillIntelligenceInput) => {
         '',
     ),
   );
-  const resourcePaths = Object.keys(toPlainObject(raw.resources))
-    .sort()
-    .slice(0, 80);
+  const resourcePaths = Object.keys(toPlainObject(raw.resources)).sort().slice(0, 80);
 
   return [
     `Skill name: ${input.name}`,
@@ -247,7 +244,9 @@ const buildPrompt = (input: NexusRegistrySkillIntelligenceInput) => {
     input.repositoryUrl ? `Repository: ${input.repositoryUrl}` : undefined,
     input.locale ? `Target language: ${input.locale}` : undefined,
     content ? `Skill content:\n${content}` : undefined,
-    Object.keys(manifest).length > 0 ? `Manifest:\n${JSON.stringify(manifest, null, 2)}` : undefined,
+    Object.keys(manifest).length > 0
+      ? `Manifest:\n${JSON.stringify(manifest, null, 2)}`
+      : undefined,
     resourcePaths.length > 0 ? `Resource files:\n${resourcePaths.join('\n')}` : undefined,
     input.tags?.length ? `Current tags: ${input.tags.join(', ')}` : undefined,
   ]
@@ -295,7 +294,7 @@ export const analyzeNexusRegistrySkill = async (
         messages: [
           {
             content:
-              'You normalize LobeHub skill metadata. Return only structured data. Keep summaries concise, useful, and in the user locale.',
+              'You normalize Qingzhou skill metadata. Return only structured data. Keep summaries concise, useful, and in the user locale.',
             role: 'system',
           },
           {

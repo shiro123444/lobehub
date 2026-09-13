@@ -6,11 +6,17 @@ import type {
   PresentationPort,
 } from '../../../../packages/cordis-kernel/src/presentation';
 import type {
+  PresentationJob,
+  PresentationMessageInput,
+} from '../../../../packages/runtime-contracts/src';
+import type {
   PresentationFactoryScope,
   PresentationPortBinding,
   PresentationPortFactory,
 } from './factory';
 import { getPresentationPortFactory } from './factory';
+import type { PresentationGenerationPort } from './generation-port';
+import { readPresentationUploadForm } from './upload-form';
 
 export type {
   ArtifactSnapshot,
@@ -27,6 +33,13 @@ export type {
 } from './factory';
 
 export type PresentationRouteOperation =
+  | 'message'
+  | 'templates'
+  | 'learnTemplate'
+  | 'importTemplate'
+  | 'applyTemplate'
+  | 'tools'
+  | 'tool'
   | 'create'
   | 'get'
   | 'cancel'
@@ -108,7 +121,8 @@ const errorDetails = (error: unknown): Record<string, string> | undefined => {
 };
 
 const statusForCode = (code: string): number => {
-  if (code === 'PRESENTATION_INVALID') return 400;
+  if (code === 'PRESENTATION_INVALID' || code === 'TEMPLATE_INVALID') return 400;
+  if (code === 'PRESENTATION_CONFLICT' || code === 'PLUGIN_BUSY') return 409;
   if (code === 'PRESENTATION_NOT_FOUND' || code === 'PRESENTATION_ROUTE_NOT_FOUND') return 404;
   if (code === 'PRESENTATION_CANCEL_FAILED') return 502;
   if (code === 'PRESENTATION_TIMEOUT') return 504;
@@ -161,6 +175,21 @@ const pathSegments = (request: Request): string[] => {
 export const matchPresentationRoute = (request: Request): PresentationRouteMatch => {
   const segments = pathSegments(request);
   const method = request.method.toUpperCase();
+  if (segments.length === 1 && segments[0] === 'templates') {
+    if (method === 'GET') return { operation: 'templates' };
+    if (method === 'POST') return { operation: 'learnTemplate' };
+  }
+  if (
+    segments.length === 2 &&
+    segments[0] === 'templates' &&
+    segments[1] === 'import' &&
+    method === 'POST'
+  )
+    return { operation: 'importTemplate' };
+  if (segments.length === 1 && segments[0] === 'tools' && method === 'GET')
+    return { operation: 'tools' };
+  if (segments.length === 2 && segments[0] === 'tools' && method === 'POST')
+    return { operation: 'tool', id: segments[1] };
   if (segments.length === 1 && segments[0] === 'jobs' && method === 'POST') {
     return { operation: 'create' };
   }
@@ -170,6 +199,8 @@ export const matchPresentationRoute = (request: Request): PresentationRouteMatch
   if (segments.length === 3 && segments[0] === 'jobs' && method === 'POST') {
     if (segments[2] === 'cancel') return { operation: 'cancel', id: segments[1] };
     if (segments[2] === 'retry') return { operation: 'retry', id: segments[1] };
+    if (segments[2] === 'template') return { operation: 'applyTemplate', id: segments[1] };
+    if (segments[2] === 'messages') return { operation: 'message', id: segments[1] };
   }
   if (segments.length === 2 && segments[0] === 'artifacts' && method === 'GET') {
     return { operation: 'getArtifact', id: segments[1] };
@@ -284,6 +315,58 @@ export const handlePresentationRequest = async (
 
     const result = await factory({ ...scope, request });
     const port = resolvePort(result);
+    if (
+      ['templates', 'learnTemplate', 'importTemplate', 'applyTemplate', 'tools', 'tool'].includes(
+        match.operation,
+      )
+    ) {
+      const extended = port as unknown as PresentationGenerationPort;
+      if (typeof extended.listTemplates !== 'function')
+        throw new PresentationRequestError(
+          'PROVIDER_UNAVAILABLE',
+          'Extended presentation capabilities are unavailable',
+        );
+      if (match.operation === 'templates')
+        return successResponse({ templates: await extended.listTemplates() });
+      if (match.operation === 'tools') return successResponse(await extended.listOperations());
+      if (match.operation === 'importTemplate') {
+        const form = await readPresentationUploadForm(request);
+        const file = form.get('file');
+        if (
+          !file ||
+          typeof file === 'string' ||
+          !file.name.toLowerCase().endsWith('.pptx') ||
+          file.size > 32 * 1024 * 1024
+        )
+          throw new PresentationRequestError(
+            'PRESENTATION_INVALID',
+            'Upload a PPTX smaller than 32 MiB',
+          );
+        return successResponse(
+          await extended.importTemplate(
+            String(form.get('name') || file.name.replace(/\.pptx$/i, '')),
+            new Uint8Array(await file.arrayBuffer()),
+          ),
+        );
+      }
+      const body = await readJsonObject(request);
+      if (match.operation === 'learnTemplate')
+        return successResponse(
+          await extended.learnTemplate(
+            String(body.name || ''),
+            requiredId(body.jobId as string, 'jobId'),
+          ),
+        );
+      if (match.operation === 'applyTemplate')
+        return successResponse(
+          await extended.applyTemplate(
+            requiredId(match.id, 'jobId'),
+            body as unknown as Parameters<typeof extended.applyTemplate>[1],
+          ),
+        );
+      if (match.operation === 'tool')
+        return successResponse(await extended.executeOperation(requiredId(match.id, 'name'), body));
+    }
     if (match.operation === 'create') {
       const input = (await readJsonObject(request)) as unknown as PresentationJobInput;
       return successResponse(await port.createJob(input));
@@ -314,6 +397,22 @@ export const handlePresentationRequest = async (
     }
     if (match.operation === 'cancel') return successResponse(await port.cancelJob(id));
     if (match.operation === 'retry') return successResponse(await port.retryJob(id));
+    if (match.operation === 'message') {
+      const messaging = port as typeof port & {
+        sendMessage?: (jobId: string, input: PresentationMessageInput) => Promise<PresentationJob>;
+      };
+      if (!messaging.sendMessage)
+        throw new PresentationRequestError(
+          'PROVIDER_UNAVAILABLE',
+          'Presentation messages are not available',
+        );
+      return successResponse(
+        await messaging.sendMessage(
+          id,
+          (await readJsonObject(request)) as unknown as PresentationMessageInput,
+        ),
+      );
+    }
     if (match.operation === 'getArtifact') {
       const isRaw =
         match.raw ||

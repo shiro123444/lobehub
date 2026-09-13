@@ -7,7 +7,7 @@ export interface GitHubSkillSource {
   resources?: Record<string, { size: number }>;
 }
 
-const github = new GitHub({ userAgent: 'LobeHub-Nexus-Registry' });
+const github = new GitHub({ userAgent: 'Qingzhou-Registry' });
 const parser = new SkillParser();
 
 export const loadGitHubSkillSource = async (

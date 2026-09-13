@@ -1,0 +1,41 @@
+'use client';
+
+import { memo } from 'react';
+
+import styles from './index.module.css';
+
+interface QingzhouBrandLoadingProps {
+  caption?: string;
+  variant?: 'default' | 'hero' | 'compact';
+}
+
+const QINGZHOU_TEXT_PATH =
+  'M1330 1240v-110h145 146l-3 108-3 107-142 3-143 3v-111zm3517 103c-4-3-7-255-7-560V230h145 145v295 295h138c228 0 225 5 226-332l1-253 148-3 149-3-4 288c-5 310-7 327-63 411-29 45-89 90-155 117-37 16-80 20-240 25l-195 5-3 138-3 137h-138c-76 0-141-3-144-7zM335 1319c-163-24-289-143-324-307-14-66-15-391-1-462 23-121 90-219 182-266 92-47 145-54 403-55h240l60-70 59-69h179 179l-44 52c-51 63-394 464-448 526l-38 43-108-6c-60-2-140-5-177-5h-69l81-94c45-52 81-97 81-101 0-16-167 1-200 21-71 41-75 56-75 249 0 190 3 200 69 249 44 33 396 32 442-1 56-40 67-78 68-254l2-157 99-116c54-64 102-116 106-116 16 0 60 70 80 126 18 51 20 82 20 268 0 120-4 232-11 261-32 141-139 244-292 280-71 17-457 19-563 4zm995-669V230h145 145v420 420h-145-145V650zm389 186c-1-130-2-256-2-281s1-108 2-185l1-140h139c117 0 140 2 145 16 3 9 6 141 6 295v279h138c225 0 222 4 222-342V230h145 145v271c0 246-2 277-21 339-27 89-75 144-165 190l-69 35-342 3-343 3-1-235zm1270 220c-155-42-249-170-249-341 0-146 54-236 178-297l66-33 188-3 188-4v121 121h-115c-126 0-171 12-199 51-19 28-20 58-4 94 22 48 52 55 228 55h160V570 320l-29-32-29-33-296-3-296-3v-72c0-40 3-96 6-125l7-52h313c388 0 426 6 515 87 56 50 88 118 99 211 10 78 12 680 3 740l-5 32-342-1c-237 0-355-4-387-13zm821-111V820h235c129 0 235-3 235-7 0-8-27-30-312-254l-168-131v-62c0-33 3-78 6-98l7-38h474 474l-3 122-3 123-237 3c-131 1-238 6-237 10 0 4 21 23 47 43 26 20 126 98 221 173 96 76 183 142 193 147 19 10 25 100 12 182l-7 37h-468-469V945zm2337 114c-224-54-336-298-261-569 23-82 67-144 136-190 98-65 135-72 385-68 212 3 220 4 275 30 167 78 242 248 210 476-22 150-86 242-210 300-56 26-62 27-277 29-121 1-237-2-258-8zm412-265c39-33 55-90 48-171-12-126-40-143-230-143h-137l-38 34c-37 34-37 35-40 123-3 79-1 92 20 123 37 54 57 60 210 60 132 0 137-1 167-26zm421-2c0-256 2-283 21-340 28-83 89-150 171-188l63-29h230 230l67 33c87 42 142 104 168 188 18 61 25 239 21 557l-1 57h-135c-123 0-135-2-145-19-6-12-10-109-10-246 0-256-5-281-63-308-49-23-215-24-263-1-61 29-64 44-64 324v250h-145-145V792z';
+
+const QingzhouBrandLoading = memo<QingzhouBrandLoadingProps>(({ caption, variant = 'default' }) => {
+  const rootClassName = [styles.root, styles[variant]].filter(Boolean).join(' ');
+
+  return (
+    <div aria-label="Qingzhou loading" className={rootClassName} role="status">
+      <div className={styles.copy}>
+        <svg
+          aria-hidden
+          className={styles.wordSvg}
+          preserveAspectRatio="xMidYMid meet"
+          viewBox="0 0 795.18 135.055"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <g transform="translate(-.03 135.055) scale(.1 -.1)">
+            <path className={styles.wordGhost} d={QINGZHOU_TEXT_PATH} />
+            <path className={styles.wordPath} d={QINGZHOU_TEXT_PATH} pathLength={1000} />
+          </g>
+        </svg>
+        {caption && <div className={styles.caption}>{caption}</div>}
+      </div>
+    </div>
+  );
+});
+
+QingzhouBrandLoading.displayName = 'QingzhouBrandLoading';
+
+export default QingzhouBrandLoading;

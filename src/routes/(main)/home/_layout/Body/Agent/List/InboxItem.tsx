@@ -56,7 +56,7 @@ const InboxItem = memo<InboxItemProps>(({ className, style }) => {
     inboxAgentId ? operationSelectors.isAgentRunning(inboxAgentId) : () => false,
   );
   const prefetchAgent = usePrefetchAgent();
-  const inboxAgentTitle = inboxMeta.title || 'Lobe AI';
+  const inboxAgentTitle = inboxMeta.title || 'jumi AI';
   const inboxAgentAvatar = inboxMeta.avatar || DEFAULT_INBOX_AVATAR;
   const inboxUrl = SESSION_CHAT_URL(inboxAgentId, false);
 

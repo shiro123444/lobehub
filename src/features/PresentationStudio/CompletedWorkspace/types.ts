@@ -2,6 +2,7 @@ import type {
   ArtifactSnapshot,
   PresentationExportFormat,
   PresentationJob,
+  PresentationMessageInput,
 } from '../../../../packages/runtime-contracts/src/index';
 import type { PresentationSlotState } from '../store/presentationStore';
 
@@ -17,11 +18,16 @@ export interface CompletedWorkspaceProps {
   effectiveSelectedArtifactId: string | null;
   exported: { artifactId: string; format: PresentationExportFormat; uri?: string } | null;
   exporting: boolean | string | null;
+  jobs?: PresentationJob[];
   jobTitles: Record<string, string>;
   onAiModify: (prompt: string) => Promise<void>;
   onExport: (artifactId: string, format: PresentationExportFormat) => void;
+  onJobChanged?: () => Promise<void>;
+  onNewPresentation?: () => void;
   onRetryJob: (jobId: string) => void;
   onSelectArtifact: (artifactId: string) => void;
+  onSelectJob?: (jobId: string) => void;
+  onSendMessage?: (jobId: string, input: PresentationMessageInput) => Promise<boolean>;
   resolveArtifactUri?: (artifactId: string) => string | undefined;
   retryPendingKeys: Record<string, boolean>;
   retrySlot: (jobId: string, slideId: string, slotId: string) => Promise<void>;

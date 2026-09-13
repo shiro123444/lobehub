@@ -25,7 +25,9 @@ export const trackLoginOrSignupClicked = ({ provider, spm }: TrackLoginOrSignupC
     });
   };
 
-  return sendEvent().catch((error) => {
+  // Optional analytics must never delay authentication or navigation.
+  void sendEvent().catch((error) => {
     console.error('Failed to track login_or_signup_clicked:', error);
   });
+  return Promise.resolve();
 };

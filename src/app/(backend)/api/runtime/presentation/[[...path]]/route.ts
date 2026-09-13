@@ -1,13 +1,29 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { checkAuth } from '@/app/(backend)/middleware/auth';
 import { auth } from '@/auth';
+import { session as authSessions } from '@/database/schemas/betterAuth';
+import type { LobeChatDatabase } from '@/database/type';
+import {
+  migratePresentationSessions,
+  presentationAccountScope,
+} from '@/server/runtime/presentation/account-workspace';
+import { createPresentationArtifactAssetStoreBridge } from '@/server/runtime/presentation/asset-store';
+import { uploadPresentationAttachment } from '@/server/runtime/presentation/attachment-storage';
 import type { PresentationRuntimeComposition } from '@/server/runtime/presentation/composition';
+import { createPresentationContextServices } from '@/server/runtime/presentation/context-services';
+import { createPresentationContextRuntime } from '@/server/runtime/presentation/context-tools';
+import { conversationStream } from '@/server/runtime/presentation/conversation-stream';
+import {
+  createPresentationRouteJournalBindings,
+  ScopedPresentationJobEventJournalCache,
+} from '@/server/runtime/presentation/event-journal-cache';
 import {
   createScopedPresentationPortCache,
   getPresentationPortFactory,
@@ -16,6 +32,7 @@ import {
   presentationPortFactoryFromScopeCache,
   type PresentationPortScopeCacheBinding,
 } from '@/server/runtime/presentation/factory';
+import { FilePresentationStorage } from '@/server/runtime/presentation/file-storage';
 import type { PresentationGenerationCapability } from '@/server/runtime/presentation/generation-capability';
 import {
   handlePresentationGenerationRequest,
@@ -25,18 +42,11 @@ import {
   handlePresentationRequest,
   matchPresentationRoute,
 } from '@/server/runtime/presentation/handler';
+import { createPresentationImageGenerationEventPublisher } from '@/server/runtime/presentation/image-event-bridge';
 import type { ImageGenerationCapability } from '@/server/runtime/presentation/image-generation-capability';
 import { createImageGenerationCapability } from '@/server/runtime/presentation/image-generation-capability';
 import { handleImageGenerationRequest } from '@/server/runtime/presentation/image-generation-handler';
-import {
-  PresentationJobEventJournal,
-  type PresentationJobEventJournalPort,
-} from '@/server/runtime/presentation/job-event-journal';
-import {
-  createPresentationRouteJournalBindings,
-  ScopedPresentationJobEventJournalCache,
-} from '@/server/runtime/presentation/event-journal-cache';
-import { createPresentationImageGenerationEventPublisher } from '@/server/runtime/presentation/image-event-bridge';
+import { type PresentationJobEventJournalPort } from '@/server/runtime/presentation/job-event-journal';
 import type { PresentationPipelineContext } from '@/server/runtime/presentation/pipeline';
 import type { ProductionProviderReadiness } from '@/server/runtime/presentation/production-command';
 import { PRODUCTION_PRESENTATION_ENV_KEYS } from '@/server/runtime/presentation/production-config';
@@ -46,8 +56,6 @@ import {
   createProductionPresentationGenerationComposition,
   type PptMasterPresentationScope,
 } from '@/server/runtime/presentation/production-factory';
-import { createProcessPresentationRunner } from '@/server/runtime/presentation/runner';
-import { PptMasterToolchain } from '@/server/runtime/presentation/toolchain';
 import {
   createProductionOpenAIImageGenerationPort,
   PRODUCTION_IMAGE_ENV_KEYS,
@@ -56,15 +64,14 @@ import {
   createProductionMultimodalChatPort,
   PRODUCTION_CHAT_ENV_KEYS,
 } from '@/server/runtime/presentation/production-multimodal-chat-config';
-import { InMemoryPresentationArtifactStore } from '@/server/runtime/presentation/artifact-store';
-import {
-  createPresentationArtifactAssetStoreBridge,
-  InMemoryPresentationAssetStore as InMemoryAssetStore,
-} from '@/server/runtime/presentation/asset-store';
+import { createPresentationChatFetch } from '@/server/runtime/presentation/resilient-fetch';
+import { createProcessPresentationRunner } from '@/server/runtime/presentation/runner';
 import {
   createPresentationJobEventSseResponse,
   type PresentationJobEventSerializer,
 } from '@/server/runtime/presentation/sse';
+import { FilePresentationTemplateLibrary } from '@/server/runtime/presentation/templates';
+import { PptMasterToolchain } from '@/server/runtime/presentation/toolchain';
 
 import type { RuntimeScope } from '../../../../../../../packages/runtime-contracts/src';
 
@@ -244,6 +251,8 @@ const serverSessionHeaders = (request: Request): Headers => {
   return headers;
 };
 
+const accountMigrations = new Map<string, Promise<unknown>>();
+
 const defaultGenerationScopeFactory: PresentationGenerationScopeFactory = async (
   request,
   authenticated,
@@ -265,7 +274,28 @@ const defaultGenerationScopeFactory: PresentationGenerationScopeFactory = async 
       'Authenticated session user does not match request user',
     );
   }
-  return { userId: sessionUserId, sessionId, serverDB: authenticated.serverDB };
+  // Authentication stays session-bound; documents and execution coordination belong to the account.
+  if (!accountMigrations.has(sessionUserId)) {
+    const migration = (async () => {
+      const db = authenticated.serverDB as LobeChatDatabase | undefined;
+      const verified =
+        typeof db?.select === 'function'
+          ? await db
+              .select({ id: authSessions.id })
+              .from(authSessions)
+              .where(eq(authSessions.userId, sessionUserId))
+          : [];
+      await migratePresentationSessions(
+        process.env.CORDIS_PRESENTATION_DATA_DIR ?? join(process.cwd(), '.data', 'presentation'),
+        sessionUserId,
+        [sessionId, ...verified.map((row) => row.id)],
+      );
+    })();
+    accountMigrations.set(sessionUserId, migration);
+    migration.catch(() => accountMigrations.delete(sessionUserId));
+  }
+  await accountMigrations.get(sessionUserId);
+  return { ...presentationAccountScope(sessionUserId), serverDB: authenticated.serverDB };
 };
 
 /**
@@ -370,9 +400,9 @@ const createDefaultGenerationContextFactory = (
     return {
       plannerContext: {},
       workerContext: {
-        convert: (path) => toolchain.convert(path),
+        convert: (path, signal) => toolchain.convert(path, signal),
         jobId,
-        qualityCheck: (path) => toolchain.qualityCheck(path),
+        qualityCheck: (path, signal) => toolchain.qualityCheck(path, signal),
         workspace: {
           cleanup: () => rm(workspacePath, { force: true, recursive: true }),
           path: workspacePath,
@@ -427,17 +457,19 @@ const defaultProductionGenerationComposition = (): PresentationRuntimeCompositio
   } as const;
 
   try {
-    const artifactStore = new InMemoryPresentationArtifactStore();
+    const dataRoot =
+      process.env.CORDIS_PRESENTATION_DATA_DIR ?? join(process.cwd(), '.data', 'presentation');
+    const artifactStore = new FilePresentationStorage(dataRoot);
     const assetStore = createPresentationArtifactAssetStoreBridge(artifactStore);
     const journalCache = new ScopedPresentationJobEventJournalCache({
-      load: async (scope) => new PresentationJobEventJournal({ scope }),
+      load: async (scope) => artifactStore.createJournal(scope),
     });
     const journalBindings = createPresentationRouteJournalBindings(journalCache);
 
     const multimodalChatPort = chatApiKey
       ? createProductionMultimodalChatPort({
           env: chatEnv,
-          fetcher: globalThis.fetch,
+          fetcher: createPresentationChatFetch(globalThis.fetch),
         })
       : undefined;
 
@@ -476,7 +508,11 @@ const defaultProductionGenerationComposition = (): PresentationRuntimeCompositio
     );
 
     const result = createProductionPresentationGenerationComposition({
+      templateLibrary: new FilePresentationTemplateLibrary({
+        root: join(dataRoot, 'templates'),
+      }),
       artifactStore,
+      jobRepository: artifactStore,
       contextFactory,
       env: pptEnv,
       imageGenerationCapability,
@@ -1097,8 +1133,59 @@ const toConversationResponse = async (
         code: 'PROVIDER_UNAVAILABLE',
       });
     }
+    if (request.headers.get('content-type')?.startsWith('multipart/form-data'))
+      return NextResponse.json(await uploadPresentationAttachment(request, resolvedScope));
     const body = (await request.json()) as Record<string, unknown>;
-    const result = await capability.execute(body as never, { scope: resolvedScope });
+    const contextRuntime =
+      typeof (authenticated.serverDB as LobeChatDatabase)?.select === 'function'
+        ? createPresentationContextRuntime(
+            createPresentationContextServices(
+              authenticated.serverDB as LobeChatDatabase,
+              authenticated.userId,
+            ),
+          )
+        : undefined;
+    if (
+      body.operation === 'turn' &&
+      request.headers.get('accept')?.includes('application/x-ndjson')
+    ) {
+      return conversationStream(
+        (onActivity, signal) =>
+          capability.execute(body as never, {
+            scope: resolvedScope,
+            tools: contextRuntime,
+            capabilities: composition?.atomicRuntime,
+            signal,
+            onActivity,
+          }),
+        async () => {
+          await contextRuntime?.dispose();
+        },
+        request.signal,
+      );
+    }
+    let result;
+    try {
+      result =
+        body.operation === 'catalog'
+          ? {
+              skills:
+                (await contextRuntime?.invoke(
+                  'context.listSkills',
+                  {},
+                  { scope: resolvedScope },
+                )) ?? [],
+            }
+          : await capability.execute(body as never, {
+              scope: resolvedScope,
+              tools: contextRuntime,
+              capabilities: composition?.atomicRuntime,
+              signal: request.signal,
+            });
+    } finally {
+      await contextRuntime?.dispose();
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     return generationErrorResponse(error);

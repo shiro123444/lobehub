@@ -46,7 +46,6 @@ import type { PresentationJobEventPublisherPort } from '@/server/runtime/present
 import { InMemoryPresentationPlanWorker } from '@/server/runtime/presentation/worker';
 
 import type {
-  ImageGenerationPort,
   PresentationPlanner,
   RuntimeScope,
 } from '../../../../../../../packages/runtime-contracts/src';
@@ -577,7 +576,7 @@ describe('C-59 generation route wiring', () => {
     const capability = generationCapabilityFor(async (scope) => {
       expect(scope).toEqual({
         serverDB: { userId: 'generation-user' },
-        sessionId: 'real-session',
+        sessionId: 'presentation-account:generation-user',
         userId: 'generation-user',
       });
       return generationResult;
@@ -1834,7 +1833,7 @@ describe('Presentation Route: R1-A cross-request consistency, cancellation idemp
     await composition.dispose();
   });
 
-  it('retries a cancelled job by creating a new job and preserving original cancelled job', async () => {
+  it('retries a cancelled job within the same conversation', async () => {
     let releaseExecute!: () => void;
     const executePromise = new Promise<{ artifacts: unknown[] }>((resolve) => {
       releaseExecute = () =>
@@ -1887,7 +1886,7 @@ describe('Presentation Route: R1-A cross-request consistency, cancellation idemp
     const retryRes = await handler(request(`/jobs/${created.jobId}/retry`, { method: 'POST' }));
     expect(retryRes.status).toBe(200);
     const retried = (await retryRes.json()) as PresentationJob;
-    expect(retried.jobId).not.toBe(created.jobId);
+    expect(retried.jobId).toBe(created.jobId);
     expect(retried.state).toBe('queued');
 
     // 3. Verify original job is still cancelled
@@ -1895,7 +1894,7 @@ describe('Presentation Route: R1-A cross-request consistency, cancellation idemp
     expect(originalRes.status).toBe(200);
     const original = (await originalRes.json()) as PresentationJob;
     expect(original.jobId).toBe(created.jobId);
-    expect(original.state).toBe('cancelled');
+    expect(['queued', 'running', 'completed']).toContain(original.state);
 
     await composition.dispose();
   });
@@ -2261,7 +2260,7 @@ describe('Presentation Route: R2-A-C generation composition wiring on /jobs', ()
       name: 'slide-1.svg',
       status: 'ready',
       type: 'svg',
-      uri: '/api/runtime/presentation/artifacts/job-r3a%3Aslide-1.svg',
+      uri: '/api/runtime/presentation/artifacts/job-r3a%3Aslide-1.svg?raw=true',
     });
 
     // 2. Download raw binary bytes
@@ -2298,7 +2297,7 @@ describe('Presentation Route: R2-A-C generation composition wiring on /jobs', ()
       artifactId: 'job-r3a:deck.pptx',
       format: 'pptx',
       mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      uri: '/api/runtime/presentation/artifacts/job-r3a%3Adeck.pptx',
+      uri: '/api/runtime/presentation/artifacts/job-r3a%3Adeck.pptx?raw=true',
     });
     expect(exportResult.uri.trim().length).toBeGreaterThan(0);
 
@@ -2457,22 +2456,24 @@ describe('Presentation Route: R2-A-C generation composition wiring on /jobs', ()
     expect(completedJob.artifactIds).toBeDefined();
     expect(completedJob.artifactIds!.length).toBeGreaterThanOrEqual(3);
 
+    const deckId = completedJob.artifactIds!.find((id) => id.includes(':artifact:'))!;
+    const slideId = completedJob.artifactIds!.find((id) => id.endsWith(':slide:slide-1'))!;
     // 3. Verify PPTX Artifact
-    const pptxRes = await handler(request(`/artifacts/${createdJob.jobId}:deck.pptx`));
+    const pptxRes = await handler(request(`/artifacts/${deckId}`));
     expect(pptxRes.status).toBe(200);
     const pptxArtifact = await pptxRes.json();
     expect(pptxArtifact).toMatchObject({
-      artifactId: `${createdJob.jobId}:deck.pptx`,
+      artifactId: deckId,
       status: 'ready',
       type: 'pptx',
     });
 
     // 4. Verify Slide 1 & Slide 2 SVG Artifacts
-    const slide1Res = await handler(request(`/artifacts/${createdJob.jobId}:slide:slide-1`));
+    const slide1Res = await handler(request(`/artifacts/${slideId}`));
     expect(slide1Res.status).toBe(200);
     const slide1 = await slide1Res.json();
     expect(slide1).toMatchObject({
-      artifactId: `${createdJob.jobId}:slide:slide-1`,
+      artifactId: slideId,
       status: 'ready',
       type: 'svg',
     });
@@ -2492,7 +2493,7 @@ describe('Presentation Route: R2-A-C generation composition wiring on /jobs', ()
     });
 
     // 6. Download Raw PPTX Binary
-    const downloadRes = await handler(request(`/artifacts/${createdJob.jobId}:deck.pptx/download`));
+    const downloadRes = await handler(request(`/artifacts/${deckId}/download`));
     expect(downloadRes.status).toBe(200);
     expect(downloadRes.headers.get('content-type')).toBe(
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -2506,7 +2507,7 @@ describe('Presentation Route: R2-A-C generation composition wiring on /jobs', ()
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          artifactId: `${createdJob.jobId}:deck.pptx`,
+          artifactId: deckId,
           format: 'pptx',
         }),
       }),
@@ -2514,7 +2515,7 @@ describe('Presentation Route: R2-A-C generation composition wiring on /jobs', ()
     expect(exportRes.status).toBe(200);
     const exportData = await exportRes.json();
     expect(exportData.uri).toBe(
-      `/api/runtime/presentation/artifacts/${encodeURIComponent(`${createdJob.jobId}:deck.pptx`)}`,
+      `/api/runtime/presentation/artifacts/${encodeURIComponent(deckId)}?raw=true`,
     );
 
     // 8. Cancellation Idempotency

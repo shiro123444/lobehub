@@ -4,10 +4,10 @@ import { z } from 'zod';
 import { PluginModel } from '@/database/models/plugin';
 import { authedProcedure, publicProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
-import { SkillImporter } from '@/server/services/skill';
 import { NexusRegistryService } from '@/server/services/nexusRegistry';
 import { organizeNexusSubmission } from '@/server/services/nexusRegistry/organizer';
 import { loadGitHubSkillSource } from '@/server/services/nexusRegistry/skillSource';
+import { SkillImporter } from '@/server/services/skill';
 
 const registryProcedure = publicProcedure.use(serverDatabase).use(async ({ ctx, next }) => {
   return next({
@@ -146,7 +146,7 @@ const requireRegistryAdmin = (userId: string) => {
   if (adminIds.includes(userId)) return;
   if (process.env.NODE_ENV === 'development' && adminIds.length === 0) return;
 
-  throw new TRPCError({ code: 'FORBIDDEN', message: 'NEXUS registry admin required' });
+  throw new TRPCError({ code: 'FORBIDDEN', message: 'Qingzhou registry admin required' });
 };
 
 const resolveRegistryItem = async ({
@@ -167,7 +167,7 @@ const resolveRegistryItem = async ({
       : undefined;
 
   if (!item || item.kind !== kind || item.status !== 'active') {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'NEXUS registry item not found' });
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Qingzhou registry item not found' });
   }
 
   return item;
@@ -213,7 +213,7 @@ export const nexusRegistryRouter = router({
       if (!manifest || Object.keys(manifest).length === 0) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'NEXUS registry plugin has no installable manifest',
+          message: 'Qingzhou registry plugin has no installable manifest',
         });
       }
 
@@ -271,7 +271,7 @@ export const nexusRegistryRouter = router({
 
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: 'NEXUS registry skill has no downloadUrl, repositoryUrl, or inline content',
+        message: 'Qingzhou registry skill has no downloadUrl, repositoryUrl, or inline content',
       });
     }),
 
@@ -291,7 +291,7 @@ export const nexusRegistryRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      return ctx.nexusRegistryService.list({ ...(input ?? {}), status: 'active' });
+      return ctx.nexusRegistryService.list({ ...input, status: 'active' });
     }),
 
   listReviewQueue: registryAuthedProcedure
@@ -310,7 +310,7 @@ export const nexusRegistryRouter = router({
     .query(async ({ ctx, input }) => {
       requireRegistryAdmin(ctx.userId);
       const result = await ctx.nexusRegistryService.list({
-        ...(input ?? {}),
+        ...input,
         source: 'user',
         status: input?.status ?? 'pending',
       });
@@ -348,7 +348,7 @@ export const nexusRegistryRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return ctx.nexusRegistryService.list({
-        ...(input ?? {}),
+        ...input,
         source: 'user',
         submittedBy: ctx.userId,
       });
@@ -359,7 +359,7 @@ export const nexusRegistryRouter = router({
     .mutation(async ({ ctx, input }) => {
       requireRegistryAdmin(ctx.userId);
       return ctx.nexusRegistryService.backfillSkills({
-        ...(input ?? {}),
+        ...input,
         userId: ctx.userId,
       });
     }),
@@ -387,8 +387,7 @@ export const nexusRegistryRouter = router({
       const repositoryUrl = input.branch
         ? `${input.gitUrl.replace(/\/$/, '')}/tree/${input.branch}`
         : input.gitUrl;
-      const skillSource =
-        kind === 'skill' ? await loadGitHubSkillSource(repositoryUrl) : undefined;
+      const skillSource = kind === 'skill' ? await loadGitHubSkillSource(repositoryUrl) : undefined;
       const organized = organizeNexusSubmission({
         aiMode: input.aiMode,
         category: input.category,
@@ -483,7 +482,7 @@ export const nexusRegistryRouter = router({
         userId: ctx.userId,
       });
       if (!item)
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'NEXUS registry item not found' });
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Qingzhou registry item not found' });
 
       // Audit human approve/reject decisions (lifecycle ops like archived/hidden are not
       // review decisions and are intentionally not recorded as review actions here).

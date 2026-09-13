@@ -9,7 +9,7 @@ import { createSystemRole } from './systemRole';
 const WebOnboardingIdentifier = 'lobe-web-onboarding';
 
 export const WEB_ONBOARDING: BuiltinAgentDefinition = {
-  avatar: '/avatars/nexus-mascot.png',
+  avatar: '/brand/qingzhou-mark.svg',
   persist: {
     model: DEFAULT_ONBOARDING_MODEL,
     provider: DEFAULT_ONBOARDING_PROVIDER,

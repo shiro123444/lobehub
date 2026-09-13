@@ -23,7 +23,9 @@ import type {
 export interface PresentationPipelineContext {
   readonly eventPublisher?: PresentationJobEventPublisherPort;
   readonly eventScope?: PresentationEventScope;
+  readonly initialPlan?: PresentationPlan;
   plannerContext: PlannerContext;
+  readonly preparePlan?: (plan: PresentationPlan) => Promise<PresentationPlan>;
   /** Short alias for callers constructing a context by hand. */
   readonly publisher?: PresentationJobEventPublisherPort;
   /** Short alias for callers constructing a context by hand. */
@@ -38,6 +40,7 @@ export interface PresentationGenerationResult {
 
 export interface PresentationGenerationPipeline {
   dispose?: () => void | Promise<void>;
+  plan?: (input: PresentationJobInput, context: PlannerContext) => Promise<PresentationPlan>;
   run: (
     input: PresentationJobInput,
     context: PresentationPipelineContext,
@@ -84,6 +87,10 @@ export class PresentationGenerationPipelineImpl implements PresentationGeneratio
     this.eventPublisher = resolvedOptions.eventPublisher ?? resolvedOptions.publisher;
     this.now = resolvedOptions.now ?? (() => new Date().toISOString());
     this.scope = resolvedOptions.scope;
+  }
+
+  plan(input: PresentationJobInput, context: PlannerContext): Promise<PresentationPlan> {
+    return this.planner.plan(input, context);
   }
 
   async run(
@@ -147,7 +154,8 @@ export class PresentationGenerationPipelineImpl implements PresentationGeneratio
         ...(input.slideCount ? { totalSlides: input.slideCount } : {}),
       });
 
-      const plan = await this.planner.plan(plannerInput, plannerContext);
+      let plan = context.initialPlan ?? (await this.planner.plan(plannerInput, plannerContext));
+      if (context.preparePlan) plan = await context.preparePlan(plan);
       validatePresentationPlan(plan);
       publish(PRESENTATION_JOB_EVENT_TYPES.workerStarted, 'running', 'phase:worker', {
         activity: '正在生成页面与视觉素材',

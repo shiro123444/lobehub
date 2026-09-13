@@ -4,6 +4,7 @@ import type { RuntimeScope } from '../../../../packages/runtime-contracts/src';
 import {
   assertSafeImageUrl,
   createGLMMultimodalChatPort,
+  createTrustedChatImages,
   type GLMChatFetcher,
   GLMChatProviderError,
   type GLMChatRequest,
@@ -18,6 +19,92 @@ const response = (
   ok,
   status,
   text: async () => (typeof payload === 'string' ? payload : JSON.stringify(payload)),
+});
+
+describe('server-owned visual references', () => {
+  const base64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const url = `data:image/png;base64,${base64}`;
+  const request: GLMChatRequest = {
+    messages: [{ content: [{ image_url: { url }, type: 'image_url' }], role: 'user' }],
+  };
+
+  it('permits exactly the scoped images from a process-local server permission', async () => {
+    const fetcher = vi.fn(async (_endpoint: string, _init: RequestInit) =>
+      response({ choices: [{ message: { content: 'A teal product', role: 'assistant' } }] }),
+    );
+    const port = createGLMMultimodalChatPort(defaultOptions(fetcher));
+    const trustedImages = createTrustedChatImages(
+      [{ base64, mimeType: 'image/png' }],
+      defaultScope,
+    );
+    await expect(port.chat(request, { scope: defaultScope, trustedImages })).resolves.toMatchObject(
+      { choices: [{ message: { content: 'A teal product' } }] },
+    );
+    expect(
+      JSON.parse(vi.mocked(fetcher).mock.calls[0][1].body as string).messages[0].content[0]
+        .image_url.url,
+    ).toBe(url);
+    await expect(
+      port.chat(request, { scope: { ...defaultScope, sessionId: 'other-session' }, trustedImages }),
+    ).rejects.toMatchObject({ code: 'CHAT_REQUEST_INVALID' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues rejecting JSON-supplied data URLs or forged permissions', async () => {
+    const fetcher = vi.fn();
+    const port = createGLMMultimodalChatPort(defaultOptions(fetcher));
+    await expect(port.chat(request, { scope: defaultScope })).rejects.toMatchObject({
+      code: 'CHAT_REQUEST_INVALID',
+    });
+    const trustedImages = createTrustedChatImages(
+      [{ base64, mimeType: 'image/png' }],
+      defaultScope,
+    );
+    await expect(
+      port.chat(request, {
+        scope: defaultScope,
+        trustedImages: JSON.parse(JSON.stringify(trustedImages)),
+      }),
+    ).rejects.toMatchObject({ code: 'CHAT_REQUEST_INVALID' });
+    await expect(
+      port.chat(
+        {
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: 'data:image/png;base64,aGVsbG8=' } },
+              ],
+            },
+          ],
+        },
+        { scope: defaultScope, trustedImages },
+      ),
+    ).rejects.toMatchObject({ code: 'CHAT_REQUEST_INVALID' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('rejects forged MIME types, malformed base64 and excessive trusted payloads', () => {
+    expect(() =>
+      createTrustedChatImages([{ base64, mimeType: 'image/jpeg' }], defaultScope),
+    ).toThrow('MIME type');
+    expect(() =>
+      createTrustedChatImages([{ base64: 'not-base64', mimeType: 'image/png' }], defaultScope),
+    ).toThrow('bounded');
+    expect(() =>
+      createTrustedChatImages(
+        Array.from({ length: 5 }, () => ({ base64, mimeType: 'image/png' as const })),
+        defaultScope,
+      ),
+    ).toThrow('four images');
+    expect(() =>
+      createTrustedChatImages(
+        [{ base64: 'A'.repeat(Math.ceil((8 * 1024 * 1024) / 3) * 4 + 4), mimeType: 'image/png' }],
+        defaultScope,
+      ),
+    ).toThrow('bounded');
+  });
 });
 
 const defaultScope: RuntimeScope = {

@@ -205,7 +205,9 @@ export const useJobPolling = (
       if (disposed) return;
 
       const state = store.getState();
-      const subscribe = state.presentationClient?.subscribePresentationJob;
+      const subscribe = state.presentationClient?.subscribePresentationJob?.bind(
+        state.presentationClient,
+      );
       const activeJobIds = Object.values(state.jobs)
         .filter((job): job is PresentationJob =>
           Boolean(job && job.state && isActiveState(job.state)),
@@ -231,7 +233,7 @@ export const useJobPolling = (
       // other jobs' statuses are never touched.
       for (const job of Object.values(state.jobs)) {
         if (!job || !job.state || isActiveState(job.state)) continue;
-        if (store.getState().streamStatusByJob[job.jobId] !== undefined) {
+        if (store.getState().streamStatusByJob[job.jobId] != null) {
           store.getState().setStreamStatusForJob(job.jobId, null);
         }
       }

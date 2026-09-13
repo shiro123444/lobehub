@@ -2,7 +2,7 @@ import { BrandLoading, LobeHubText } from '@lobehub/ui/brand';
 
 import { isCustomBranding } from '@/const/version';
 
-import NexusBrandLoading from '../NexusBrandLoading';
+import QingzhouBrandLoading from '../QingzhouBrandLoading';
 import styles from './index.module.css';
 
 interface BrandTextLoadingProps {
@@ -15,7 +15,7 @@ const BrandTextLoading = ({ debugId }: BrandTextLoadingProps) => {
   return (
     <div className={styles.container}>
       {isCustomBranding ? (
-        <NexusBrandLoading />
+        <QingzhouBrandLoading />
       ) : (
         <div aria-label="Loading" className={styles.brand} role="status">
           <BrandLoading size={40} text={LobeHubText} />

@@ -1,37 +1,70 @@
 import { Button, Icon } from '@lobehub/ui';
-import { ChevronLeft, ChevronRight, FileQuestion, ImageIcon, Layers } from 'lucide-react';
-import { memo, useEffect } from 'react';
+import { Tooltip } from 'antd';
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileQuestion,
+  ImageIcon,
+  Layers,
+  MessageSquarePlus,
+} from 'lucide-react';
+import { memo, useEffect, useState } from 'react';
 
-import type { ArtifactSnapshot } from '../../../../packages/runtime-contracts/src/index';
+import type {
+  ArtifactSnapshot,
+  PresentationMessageInput,
+} from '../../../../packages/runtime-contracts/src/index';
+import { SlideAnnotation } from '../annotation/SlideAnnotation';
 import { styles } from './style';
 
 export interface SlideFocusStageProps {
   currentIndex: number;
+  jobId?: string;
   onNext: () => void;
   onOpenDrawer: () => void;
   onPrev: () => void;
+  onSendMessage?: (jobId: string, input: PresentationMessageInput) => Promise<boolean>;
   selectedSlide: ArtifactSnapshot | null;
   totalSlides: number;
+  versionId?: string;
 }
 
 const getSlideStatusZh = (status?: string): string => {
   switch (status) {
-    case 'ready':
+    case 'ready': {
       return '已就绪';
-    case 'generating':
+    }
+    case 'generating': {
       return '生成中';
-    case 'failed':
+    }
+    case 'failed': {
       return '生成失败';
-    case 'cancelled':
+    }
+    case 'cancelled': {
       return '已取消';
+    }
     case 'pending':
-    default:
+    default: {
       return '排队中';
+    }
   }
 };
 
 export const SlideFocusStage = memo<SlideFocusStageProps>(
-  ({ currentIndex, onNext, onOpenDrawer, onPrev, selectedSlide, totalSlides }) => {
+  ({
+    currentIndex,
+    jobId,
+    versionId,
+    onSendMessage,
+    onNext,
+    onOpenDrawer,
+    onPrev,
+    selectedSlide,
+    totalSlides,
+  }) => {
+    const [annotating, setAnnotating] = useState(false);
+    useEffect(() => setAnnotating(false), [currentIndex]);
+    const aspectRatio = selectedSlide?.metadata?.aspectRatio === '4:3' ? '4:3' : '16:9';
     const ready = selectedSlide?.status === 'ready' && Boolean(selectedSlide?.uri);
 
     const pagePillText =
@@ -67,12 +100,16 @@ export const SlideFocusStage = memo<SlideFocusStageProps>(
       <section aria-label="幻灯片单页预览" className={styles.stageArea} data-testid="slide-preview">
         <div className={styles.focusCanvas}>
           <div
-            aria-label={`第 ${currentIndex + 1} 页 16:9 大预览`}
+            aria-label={`第 ${currentIndex + 1} 页 ${aspectRatio} 大预览`}
             className={styles.focusFrame169}
             role="button"
+            style={{ aspectRatio: aspectRatio.replace(':', ' / ') }}
             tabIndex={0}
-            onClick={onOpenDrawer}
+            onClick={() => {
+              if (!annotating) onOpenDrawer();
+            }}
             onKeyDown={(e) => {
+              if (annotating || e.target !== e.currentTarget) return;
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 onOpenDrawer();
@@ -97,37 +134,63 @@ export const SlideFocusStage = memo<SlideFocusStageProps>(
               </div>
             )}
 
-            <div className={styles.hoverCue} data-role="hover-cue">
-              <Icon icon={Layers} size={12} />
-              <span>点击查看架构与资产</span>
-            </div>
+            {annotating && ready && jobId && versionId && onSendMessage && (
+              <SlideAnnotation
+                jobId={jobId}
+                page={currentIndex + 1}
+                versionId={versionId}
+                onClose={() => setAnnotating(false)}
+                onSend={onSendMessage}
+              />
+            )}
+            {!annotating && (
+              <div className={styles.hoverCue} data-role="hover-cue">
+                <Icon icon={Layers} size={12} />
+                <span>查看资产</span>
+              </div>
+            )}
           </div>
         </div>
 
         <nav aria-label="幻灯片分页导航" className={styles.bottomPaginator}>
-          <Button
-            aria-label="上一页"
-            disabled={currentIndex <= 0}
-            icon={<Icon icon={ChevronLeft} size={14} />}
-            size="small"
-            onClick={onPrev}
-          >
-            上一页
-          </Button>
+          {onSendMessage && (
+            <Tooltip title={annotating ? '退出标注' : '标注修改'}>
+              <Button
+                aria-label={annotating ? '退出标注' : '标注修改'}
+                aria-pressed={annotating}
+                className={styles.iconButton}
+                disabled={!ready || !versionId}
+                icon={<Icon icon={MessageSquarePlus} size={23} />}
+                type={annotating ? 'primary' : 'text'}
+                onClick={() => setAnnotating(!annotating)}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title="上一页">
+            <Button
+              aria-label="上一页"
+              className={styles.iconButton}
+              disabled={currentIndex <= 0}
+              icon={<Icon aria-hidden icon={ChevronLeft} size={22} />}
+              type="text"
+              onClick={onPrev}
+            />
+          </Tooltip>
 
           <span className={styles.pageCounter} data-testid="slide-page-counter">
             {pagePillText}
           </span>
 
-          <Button
-            aria-label="下一页"
-            disabled={currentIndex >= totalSlides - 1}
-            icon={<Icon icon={ChevronRight} size={14} />}
-            size="small"
-            onClick={onNext}
-          >
-            下一页
-          </Button>
+          <Tooltip title="下一页">
+            <Button
+              aria-label="下一页"
+              className={styles.iconButton}
+              disabled={currentIndex >= totalSlides - 1}
+              icon={<Icon aria-hidden icon={ChevronRight} size={22} />}
+              type="text"
+              onClick={onNext}
+            />
+          </Tooltip>
         </nav>
       </section>
     );

@@ -1,5 +1,6 @@
-import { Button, Flexbox, Icon } from '@lobehub/ui';
-import { ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { Button, Icon } from '@lobehub/ui';
+import { Tooltip } from 'antd';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { memo, useCallback, useMemo, useState } from 'react';
 
 import SlideNavigator from '../SlideNavigator';
@@ -19,8 +20,13 @@ export const CompletedWorkspace = memo<CompletedWorkspaceProps>(
     exported,
     exporting,
     jobTitles,
+    jobs,
+    onSelectJob,
     onAiModify,
+    onSendMessage,
     onExport,
+    onJobChanged,
+    onNewPresentation,
     onRetryJob,
     onSelectArtifact,
     resolveArtifactUri,
@@ -64,11 +70,14 @@ export const CompletedWorkspace = memo<CompletedWorkspaceProps>(
       [onSelectArtifact],
     );
 
+    const deckArtifact = selectedJobArtifacts.find(
+      (artifact) => artifact.type === 'pptx' && artifact.status === 'ready',
+    );
     const handleQuickExport = useCallback(() => {
-      if (selectedSlide && canExport) {
-        onExport(selectedSlide.artifactId, 'pptx');
+      if (deckArtifact && canExport) {
+        onExport(deckArtifact.artifactId, 'pptx');
       }
-    }, [canExport, onExport, selectedSlide]);
+    }, [canExport, onExport, deckArtifact]);
 
     const rawJobTitle = selectedJob ? jobTitles[selectedJob.jobId] : undefined;
     const jobTitle = rawJobTitle
@@ -86,6 +95,7 @@ export const CompletedWorkspace = memo<CompletedWorkspaceProps>(
         {/* Top Capsule Floating Bar */}
         <CapsuleHeader
           canExport={canExport}
+          canQuickExport={canExport && Boolean(deckArtifact)}
           creating={creating}
           currentIndex={currentIndex}
           drawerOpen={drawerOpen}
@@ -93,64 +103,63 @@ export const CompletedWorkspace = memo<CompletedWorkspaceProps>(
           exporting={exporting}
           job={selectedJob}
           jobTitle={jobTitle}
+          jobs={jobs}
           presentationStyle={presentationStyle}
           slideCount={totalSlides}
           viewMode={viewMode}
+          availableFormats={selectedJobArtifacts
+            .filter((artifact) => artifact.status === 'ready')
+            .map((artifact) => artifact.type)}
           onAiModify={onAiModify}
-          onExport={(format) => {
-            if (selectedSlide) onExport(selectedSlide.artifactId, format);
-          }}
+          onJobChanged={onJobChanged}
+          onNewPresentation={onNewPresentation}
           onQuickExport={handleQuickExport}
           onRetryJob={() => onRetryJob(selectedJob.jobId)}
+          onSelectJob={onSelectJob}
           onToggleDrawer={() => setDrawerOpen((prev) => !prev)}
           onToggleViewMode={() => setViewMode((prev) => (prev === 'focus' ? 'lightbox' : 'focus'))}
+          onExport={(format) => {
+            const artifact =
+              format === 'svg'
+                ? selectedSlide
+                : selectedJobArtifacts.find(
+                    (item) => item.type === format && item.status === 'ready',
+                  );
+            if (artifact) onExport(artifact.artifactId, format);
+          }}
         />
 
         {/* Main Body Layout: Collapsible Filmstrip + Stage + Architecture Drawer */}
         <div className={styles.mainLayout}>
           {/* Collapsible Slide Filmstrip Dock (defaults collapsed) */}
-          <div
-            className={styles.filmstripContainer}
-            data-open={filmstripOpen ? 'true' : 'false'}
-            style={{
-              maxWidth: filmstripOpen ? 210 : 38,
-              minWidth: filmstripOpen ? 210 : 38,
-              width: filmstripOpen ? 210 : 38,
-            }}
-          >
-            <div
-              style={{
-                alignItems: 'center',
-                borderBottom: '1px solid var(--ant-color-border-secondary)',
-                display: 'flex',
-                justifyContent: filmstripOpen ? 'space-between' : 'center',
-                padding: '8px 8px',
-              }}
-            >
-              {filmstripOpen && (
-                <Flexbox horizontal align="center" gap={6}>
-                  <Icon icon={Layers} size={13} />
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>缩略胶卷</span>
-                </Flexbox>
-              )}
-              <Button
-                aria-label={filmstripOpen ? '收起胶卷' : '展开胶卷'}
-                icon={<Icon icon={filmstripOpen ? ChevronLeft : ChevronRight} size={13} />}
-                size="small"
-                type="text"
-                onClick={() => setFilmstripOpen((prev) => !prev)}
-              />
+          <div className={styles.filmstripContainer} data-open={filmstripOpen ? 'true' : 'false'}>
+            <div className={styles.filmstripHeader}>
+              <Tooltip title={filmstripOpen ? '收起胶卷' : '展开胶卷'}>
+                <Button
+                  aria-expanded={filmstripOpen}
+                  aria-label={filmstripOpen ? '收起胶卷' : '展开胶卷'}
+                  className={styles.iconButton}
+                  type="text"
+                  icon={
+                    <Icon
+                      aria-hidden
+                      icon={filmstripOpen ? PanelLeftClose : PanelLeftOpen}
+                      size={22}
+                    />
+                  }
+                  onClick={() => setFilmstripOpen((prev) => !prev)}
+                />
+              </Tooltip>
             </div>
 
             <div
+              className={styles.filmstripBody}
               style={{
                 display: filmstripOpen ? 'block' : 'none',
-                flex: 1,
-                overflowY: 'auto',
-                padding: 8,
               }}
             >
               <SlideNavigator
+                compact
                 hasSelection={Boolean(selectedJob)}
                 selectedArtifactId={effectiveSelectedArtifactId}
                 slides={slideArtifacts}
@@ -163,11 +172,14 @@ export const CompletedWorkspace = memo<CompletedWorkspaceProps>(
           {viewMode === 'focus' ? (
             <SlideFocusStage
               currentIndex={currentIndex}
+              jobId={selectedJob.jobId}
               selectedSlide={selectedSlide}
               totalSlides={totalSlides}
+              versionId={selectedJob.versionId}
               onNext={handleNext}
               onOpenDrawer={() => setDrawerOpen(true)}
               onPrev={handlePrev}
+              onSendMessage={onSendMessage}
             />
           ) : (
             <PanoramaGrid

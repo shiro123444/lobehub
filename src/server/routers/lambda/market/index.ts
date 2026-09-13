@@ -431,7 +431,7 @@ export const marketRouter = router({
         ]);
         const localCategories = localResult.status === 'fulfilled' ? localResult.value : [];
         if (localResult.status === 'rejected') {
-          log('NEXUS registry mcp categories fallback: %O', localResult.reason);
+          log('Qingzhou registry mcp categories fallback: %O', localResult.reason);
         }
 
         if (upstreamResult.status === 'fulfilled') {
@@ -466,7 +466,7 @@ export const marketRouter = router({
         const localDetail = await ctx.nexusRegistryService
           .getMcpDetail(input.identifier)
           .catch((error) => {
-            log('NEXUS registry mcp detail fallback: %O', error);
+            log('Qingzhou registry mcp detail fallback: %O', error);
             return undefined;
           });
         if (localDetail) return localDetail;
@@ -503,12 +503,12 @@ export const marketRouter = router({
         const { fetchPageSize, page, pageSize } = getMergedPageParams(input);
         const localList = await ctx.nexusRegistryService
           .listMcp({
-            ...(input ?? {}),
+            ...input,
             page: 1,
             pageSize: fetchPageSize,
           })
           .catch((error) => {
-            log('NEXUS registry mcp list fallback: %O', error);
+            log('Qingzhou registry mcp list fallback: %O', error);
             return undefined;
           });
 
@@ -517,12 +517,12 @@ export const marketRouter = router({
 
         const upstreamList = await ctx.discoverService
           .getMcpList({
-            ...(input ?? {}),
+            ...input,
             page: 1,
             pageSize: fetchPageSize,
           })
           .catch((error) => {
-            log('Error fetching upstream mcp list, using NEXUS registry only: %O', error);
+            log('Error fetching upstream mcp list, using Qingzhou registry only: %O', error);
             return undefined;
           });
 
@@ -556,7 +556,7 @@ export const marketRouter = router({
             status: 'active',
           })
           .catch((error) => {
-            log('NEXUS registry mcp manifest fallback: %O', error);
+            log('Qingzhou registry mcp manifest fallback: %O', error);
             return undefined;
           });
         if (localItem && Object.keys(localItem.manifest ?? {}).length > 0) {
@@ -681,7 +681,7 @@ export const marketRouter = router({
         ]);
         const localCategories = localResult.status === 'fulfilled' ? localResult.value : [];
         if (localResult.status === 'rejected') {
-          log('NEXUS registry plugin categories fallback: %O', localResult.reason);
+          log('Qingzhou registry plugin categories fallback: %O', localResult.reason);
         }
 
         if (upstreamResult.status === 'fulfilled') {
@@ -716,7 +716,7 @@ export const marketRouter = router({
         const localDetail = await ctx.nexusRegistryService
           .getPluginDetail(input.identifier)
           .catch((error) => {
-            log('NEXUS registry plugin detail fallback: %O', error);
+            log('Qingzhou registry plugin detail fallback: %O', error);
             return undefined;
           });
         if (localDetail) return localDetail;
@@ -766,12 +766,12 @@ export const marketRouter = router({
         const { fetchPageSize, page, pageSize } = getMergedPageParams(input);
         const localList = await ctx.nexusRegistryService
           .listPlugins({
-            ...(input ?? {}),
+            ...input,
             page: 1,
             pageSize: fetchPageSize,
           })
           .catch((error) => {
-            log('NEXUS registry plugin list fallback: %O', error);
+            log('Qingzhou registry plugin list fallback: %O', error);
             return undefined;
           });
 
@@ -780,12 +780,12 @@ export const marketRouter = router({
 
         const upstreamList = await ctx.discoverService
           .getPluginList({
-            ...(input ?? {}),
+            ...input,
             page: 1,
             pageSize: fetchPageSize,
           })
           .catch((error) => {
-            log('Error fetching upstream plugin list, using NEXUS registry only: %O', error);
+            log('Error fetching upstream plugin list, using Qingzhou registry only: %O', error);
             return undefined;
           });
 

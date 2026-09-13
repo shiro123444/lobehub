@@ -207,6 +207,14 @@ describe('PresentationStudioStore', () => {
     store.getState().selectJob('job-a');
 
     expect(store.getState().selectedArtifactId).toBe('art-1');
+
+    store.getState().selectJob(null);
+    expect(store.getState().selectedJobId).toBeNull();
+    expect(store.getState().selectedArtifactId).toBeNull();
+    expect(store.getState().jobOrder).toEqual(['job-a']);
+    expect(store.getState().jobs['job-a'].artifactIds).toEqual(['art-1', 'art-2']);
+    expect(store.getState().artifacts['art-1']).toEqual(readyArtifact());
+    expect(window.sessionStorage.getItem('presentation_studio_active_job_id')).toBeNull();
   });
 
   it('drives the full create → cancel loop through the demo client seam', async () => {

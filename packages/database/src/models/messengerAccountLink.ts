@@ -21,7 +21,7 @@ export class MessengerAccountLinkConflictError extends Error {
   readonly existingUserId: string;
 
   constructor(existingUserId: string, message?: string) {
-    super(message ?? 'IM identity is already linked to another LobeHub user');
+    super(message ?? 'IM identity is already linked to another Qingzhou user');
     this.name = 'MessengerAccountLinkConflictError';
     this.existingUserId = existingUserId;
   }

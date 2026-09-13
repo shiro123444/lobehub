@@ -1,6 +1,6 @@
 import type { ArtifactSnapshot, RuntimeScope } from '../../../../packages/runtime-contracts/src';
-import type { PresentationWorkerResult } from './worker';
 import type { ArtifactInput, PresentationArtifactStore } from './artifact-store';
+import type { PresentationWorkerResult } from './worker';
 
 const clone = <T>(value: T): T => {
   if (value instanceof Uint8Array) return new Uint8Array(value) as T;
@@ -60,10 +60,10 @@ export const persistPresentationWorkerArtifacts = async (
     const uri =
       typeof artifact.metadata?.uri === 'string' && artifact.metadata.uri.trim().length > 0
         ? artifact.metadata.uri
-        : `/api/runtime/presentation/artifacts/${encodeURIComponent(artifactId)}`;
+        : `/api/runtime/presentation/artifacts/${encodeURIComponent(artifactId)}?raw=true`;
 
     const metadata = clone({
-      ...(artifact.metadata ?? {}),
+      ...artifact.metadata,
       jobId: result.jobId,
       mimeType: artifact.mimeType,
       planId: result.planId,

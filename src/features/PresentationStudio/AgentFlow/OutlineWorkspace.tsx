@@ -1,24 +1,25 @@
-import { Button, Flexbox, Icon, Tag } from '@lobehub/ui';
-import { Input } from 'antd';
+import { Button, Flexbox, Icon } from '@lobehub/ui';
+import { Drawer, Input } from 'antd';
 import {
   ArrowDown,
   ArrowLeft,
-  ArrowRight,
   ArrowUp,
+  Columns3,
   Copy,
-  Lightbulb,
-  MessageSquare,
+  Grid2X2,
   Minus,
   Plus,
   Sparkles,
-  Target,
   Trash2,
+  X,
 } from 'lucide-react';
 import { memo, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { styles } from './style';
+import { styles } from './storyboardStyle';
 
 export interface OutlineSlide {
+  claim?: string;
   id: string;
   keyPoints: string[];
   objective?: string;
@@ -28,6 +29,7 @@ export interface OutlineSlide {
 }
 
 export interface OutlineWorkspaceProps {
+  creating?: boolean;
   initialSlides: OutlineSlide[];
   onAiRewrite: (input: {
     allSlides: OutlineSlide[];
@@ -54,7 +56,10 @@ const mergeAiSlides = (
   }));
 
 export const OutlineWorkspace = memo<OutlineWorkspaceProps>(
-  ({ initialSlides, onAiRewrite, onBack, onConfirm }) => {
+  ({ initialSlides, onAiRewrite, onBack, onConfirm, creating = false }) => {
+    const { t } = useTranslation('common');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [rail, setRail] = useState(false);
     const [versionCount, setVersionCount] = useState(1);
     const [aiBusy, setAiBusy] = useState<'all' | number | null>(null);
     const [aiError, setAiError] = useState<string | null>(null);
@@ -76,11 +81,11 @@ export const OutlineWorkspace = memo<OutlineWorkspaceProps>(
       [bumpVersion],
     );
 
-    const handleUpdateObjective = useCallback(
-      (index: number, newObjective: string) => {
+    const handleUpdateClaim = useCallback(
+      (index: number, newClaim: string) => {
         setSlides((prev) => {
           const next = [...prev];
-          next[index] = { ...next[index], objective: newObjective };
+          next[index] = { ...next[index], claim: newClaim };
           return next;
         });
         bumpVersion();
@@ -263,274 +268,201 @@ export const OutlineWorkspace = memo<OutlineWorkspaceProps>(
 
     const versionId = useMemo(() => `v${versionCount}`, [versionCount]);
 
+    const selectedIndex = slides.findIndex((slide) => slide.id === selectedId);
+    const selected = slides[selectedIndex];
+    const locked = creating || aiBusy !== null;
     return (
-      <div
+      <section
         aria-label="逐页大纲编辑工作区"
-        className={styles.outlineWorkspace}
+        className={styles.workspace}
         data-testid="presentation-agent-outline"
-        role="region"
       >
-        <div className={styles.outlineWorkspaceHeader}>
+        <div className={styles.header}>
           <Flexbox horizontal align="center" gap={12}>
             <Button
               aria-label="返回对话"
-              icon={<Icon icon={ArrowLeft} size={14} />}
-              size="middle"
+              icon={<Icon icon={ArrowLeft} size={20} />}
+              type="text"
               onClick={onBack}
-            >
-              返回对话
-            </Button>
-            <Flexbox gap={2}>
-              <span style={{ fontSize: 16, fontWeight: 700 }}>逐页大纲规划</span>
-              <span style={{ color: 'var(--ant-color-text-description)', fontSize: 12 }}>
-                共 {slides.length} 页 · 版本 {versionId}
-              </span>
-            </Flexbox>
+            />
+            <span className={styles.count}>
+              {t('presentationStoryboard.pages', { count: slides.length })}
+            </span>
           </Flexbox>
-
-          <Flexbox horizontal align="center" gap={10}>
-            <Tag color="processing">可自由增删修改</Tag>
+          <Flexbox horizontal align="center" gap={8}>
+            <Button
+              aria-label={t('presentationStoryboard.view')}
+              aria-pressed={rail}
+              icon={<Icon icon={rail ? Grid2X2 : Columns3} size={21} />}
+              type="text"
+              onClick={() => setRail(!rail)}
+            />
+            <Button
+              aria-label="AI 整体优化"
+              disabled={locked}
+              icon={<Icon icon={Sparkles} size={21} />}
+              loading={aiBusy === 'all'}
+              type="text"
+              onClick={() => void handleAiOptimizeAll()}
+            />
+            <Button
+              aria-label="添加页面"
+              disabled={locked}
+              icon={<Icon icon={Plus} size={22} />}
+              type="text"
+              onClick={handleAddSlide}
+            />
             <Button
               aria-label="确认大纲，继续生成"
-              icon={<Icon icon={ArrowRight} size={14} />}
-              size="middle"
+              disabled={aiBusy !== null || !slides.length}
+              loading={creating}
               type="primary"
               onClick={() => onConfirm({ slides, versionId })}
             >
-              确认大纲，继续生成
+              {t('presentationStoryboard.create')}
             </Button>
           </Flexbox>
         </div>
-        {aiError && (
-          <div role="alert" style={{ color: 'var(--ant-color-error)', fontSize: 12 }}>
-            {aiError}
-          </div>
-        )}
-
+        {aiError && <div role="alert">{aiError}</div>}
         <div
           aria-label="大纲总览"
-          className={styles.outlineOverview}
+          className={rail ? styles.rail : styles.grid}
           data-testid="outline-overview"
         >
           {slides.map((slide, index) => (
             <button
-              className={styles.outlineOverviewItem}
+              aria-label={`第 ${index + 1} 页 · ${slide.title}`}
+              aria-pressed={selectedId === slide.id}
+              className={styles.card}
+              data-testid={`outline-slide-${index + 1}`}
               key={slide.id}
               type="button"
-              onClick={() => {
-                document
-                  .querySelector(`[data-testid="outline-slide-${index + 1}"]`)
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
+              onClick={() => setSelectedId(slide.id)}
             >
-              <span className={styles.outlineOverviewIndex}>
-                {String(index + 1).padStart(2, '0')}
+              <span className={styles.number}>{String(index + 1).padStart(2, '0')}</span>
+              <strong className={styles.title}>{slide.title}</strong>
+              <span className={styles.claim}>
+                {slide.claim || slide.keyPoints[0] || slide.objective}
               </span>
-              <span className={styles.outlineOverviewTitle}>
-                {`第 ${index + 1} 页 · ${slide.title || '未命名页面'}`}
-              </span>
-              <span className={styles.outlineOverviewMeta}>{slide.keyPoints.length} 个要点</span>
             </button>
           ))}
         </div>
-
-        <div aria-label="幻灯片大纲列表" className={styles.outlineList}>
-          {slides.map((slide, index) => (
-            <div
-              className={styles.outlineSlideCard}
-              data-testid={`outline-slide-${index + 1}`}
-              key={slide.id}
-            >
-              <div className={styles.outlineSlideCardHeader}>
-                <span className={styles.outlineIndex}>{String(index + 1).padStart(2, '0')}</span>
-
-                <Input
-                  aria-label={`第 ${index + 1} 页标题`}
-                  placeholder="请输入页面标题..."
-                  style={{ flex: 1, fontSize: 14, fontWeight: 600, minWidth: 200 }}
-                  value={slide.title}
-                  onChange={(e) => handleUpdateTitle(index, e.target.value)}
+        <Drawer
+          closeIcon={<X size={22} />}
+          open={!!selected}
+          title={selected ? `${String(selectedIndex + 1).padStart(2, '0')}` : ''}
+          width={400}
+          onClose={() => setSelectedId(null)}
+        >
+          {selected && (
+            <div className={styles.details}>
+              <Input.TextArea
+                autoSize
+                aria-label={`第 ${selectedIndex + 1} 页标题`}
+                disabled={locked}
+                value={selected.title}
+                onChange={(e) => handleUpdateTitle(selectedIndex, e.target.value)}
+              />
+              <Flexbox horizontal gap={8}>
+                <Button
+                  aria-label={`上移第 ${selectedIndex + 1} 页`}
+                  disabled={locked || selectedIndex === 0}
+                  icon={<Icon icon={ArrowUp} size={19} />}
+                  type="text"
+                  onClick={() => handleMoveSlide(selectedIndex, -1)}
                 />
-
-                <Flexbox horizontal align="center" gap={6}>
-                  <Button
-                    aria-label={`上移第 ${index + 1} 页`}
-                    disabled={index === 0}
-                    icon={<Icon icon={ArrowUp} size={12} />}
-                    size="small"
-                    onClick={() => handleMoveSlide(index, -1)}
-                  />
-                  <Button
-                    aria-label={`下移第 ${index + 1} 页`}
-                    disabled={index === slides.length - 1}
-                    icon={<Icon icon={ArrowDown} size={12} />}
-                    size="small"
-                    onClick={() => handleMoveSlide(index, 1)}
-                  />
-                  <Button
-                    aria-label={`复制第 ${index + 1} 页`}
-                    icon={<Icon icon={Copy} size={12} />}
-                    size="small"
-                    onClick={() => handleDuplicateSlide(index)}
-                  />
-                  <Button
-                    aria-label={`优化第 ${index + 1} 页`}
-                    icon={<Icon icon={Sparkles} size={12} />}
-                    loading={aiBusy === index}
-                    size="small"
-                    onClick={() => void handleAiRewriteSlide(index)}
-                  >
-                    AI 优化
-                  </Button>
-                  <Button
-                    danger
-                    aria-label={`删除第 ${index + 1} 页`}
-                    disabled={slides.length <= 1}
-                    icon={<Icon icon={Trash2} size={12} />}
-                    size="small"
-                    onClick={() => handleDeleteSlide(index)}
-                  />
-                </Flexbox>
-              </div>
-
-              <div className={styles.outlineSlideCardBody}>
-                {/* Key Points List */}
-                <Flexbox gap={6}>
-                  <span
-                    style={{
-                      color: 'var(--ant-color-text-secondary)',
-                      fontSize: 12,
-                      fontWeight: 600,
-                    }}
-                  >
-                    关键要点：
-                  </span>
-                  {slide.keyPoints.map((point, pIdx) => (
-                    <div className={styles.outlinePointItem} key={pIdx}>
-                      <span style={{ color: 'var(--ant-color-primary)', fontSize: 13 }}>•</span>
-                      <Input
-                        aria-label={`第 ${index + 1} 页要点 ${pIdx + 1}`}
-                        size="small"
-                        style={{ flex: 1 }}
-                        value={point}
-                        onChange={(e) => handleUpdatePoint(index, pIdx, e.target.value)}
-                      />
-                      <Button
-                        danger
-                        aria-label={`删除第 ${index + 1} 页要点 ${pIdx + 1}`}
-                        disabled={slide.keyPoints.length <= 1}
-                        icon={<Icon icon={Minus} size={10} />}
-                        size="small"
-                        onClick={() => handleRemovePoint(index, pIdx)}
-                      />
-                    </div>
-                  ))}
-                  <Flexbox horizontal style={{ marginTop: 2 }}>
+                <Button
+                  aria-label={`下移第 ${selectedIndex + 1} 页`}
+                  disabled={locked || selectedIndex === slides.length - 1}
+                  icon={<Icon icon={ArrowDown} size={19} />}
+                  type="text"
+                  onClick={() => handleMoveSlide(selectedIndex, 1)}
+                />
+                <Button
+                  aria-label={`复制第 ${selectedIndex + 1} 页`}
+                  disabled={locked}
+                  icon={<Icon icon={Copy} size={19} />}
+                  type="text"
+                  onClick={() => handleDuplicateSlide(selectedIndex)}
+                />
+                <Button
+                  aria-label={`优化第 ${selectedIndex + 1} 页`}
+                  disabled={locked}
+                  icon={<Icon icon={Sparkles} size={21} />}
+                  loading={aiBusy === selectedIndex}
+                  type="text"
+                  onClick={() => void handleAiRewriteSlide(selectedIndex)}
+                />
+                <Button
+                  aria-label={`删除第 ${selectedIndex + 1} 页`}
+                  disabled={locked || slides.length <= 1}
+                  icon={<Icon icon={Trash2} size={19} />}
+                  type="text"
+                  onClick={() => handleDeleteSlide(selectedIndex)}
+                />
+              </Flexbox>
+              <label>
+                {t('presentationStoryboard.claim')}
+                <Input.TextArea
+                  autoSize
+                  aria-label={`第 ${selectedIndex + 1} 页核心结论`}
+                  disabled={locked}
+                  value={selected.claim ?? selected.keyPoints[0]}
+                  onChange={(e) => handleUpdateClaim(selectedIndex, e.target.value)}
+                />
+              </label>
+              <div>
+                <span className={styles.label}>{t('presentationStoryboard.points')}</span>
+                {selected.keyPoints.map((point, i) => (
+                  <Flexbox horizontal align="center" gap={4} key={i}>
+                    <Input.TextArea
+                      autoSize
+                      aria-label={`第 ${selectedIndex + 1} 页要点 ${i + 1}`}
+                      disabled={locked}
+                      value={point}
+                      onChange={(e) => handleUpdatePoint(selectedIndex, i, e.target.value)}
+                    />
                     <Button
-                      aria-label={`为第 ${index + 1} 页添加要点`}
-                      icon={<Icon icon={Plus} size={10} />}
-                      size="small"
-                      onClick={() => handleAddPoint(index)}
-                    >
-                      添加要点
-                    </Button>
-                  </Flexbox>
-                </Flexbox>
-
-                {/* Objective & Visual Suggestion */}
-                <Flexbox horizontal gap={16} wrap="wrap">
-                  <Flexbox flex={1} gap={4} style={{ minWidth: 240 }}>
-                    <Flexbox horizontal align="center" gap={4}>
-                      <Icon icon={Target} size={12} />
-                      <span style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
-                        页面目标：
-                      </span>
-                    </Flexbox>
-                    <Input
-                      aria-label={`第 ${index + 1} 页页面目标`}
-                      placeholder="本页要达成的沟通与传达目标..."
-                      size="small"
-                      value={slide.objective ?? ''}
-                      onChange={(e) => handleUpdateObjective(index, e.target.value)}
+                      aria-label={`删除第 ${selectedIndex + 1} 页要点 ${i + 1}`}
+                      disabled={locked}
+                      icon={<Icon icon={Minus} size={16} />}
+                      type="text"
+                      onClick={() => handleRemovePoint(selectedIndex, i)}
                     />
                   </Flexbox>
-
-                  <Flexbox flex={1} gap={4} style={{ minWidth: 240 }}>
-                    <Flexbox horizontal align="center" gap={4}>
-                      <Icon icon={Lightbulb} size={12} />
-                      <span style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
-                        视觉建议：
-                      </span>
-                    </Flexbox>
-                    <Input
-                      aria-label={`第 ${index + 1} 页视觉建议`}
-                      placeholder="建议的视觉构图、图表或布局形式..."
-                      size="small"
-                      value={slide.visualSuggestion ?? ''}
-                      onChange={(e) => handleUpdateVisual(index, e.target.value)}
-                    />
-                  </Flexbox>
-                </Flexbox>
-
-                {/* Speaker Notes */}
-                <Flexbox gap={4}>
-                  <Flexbox horizontal align="center" gap={4}>
-                    <Icon icon={MessageSquare} size={12} />
-                    <span style={{ color: 'var(--ant-color-text-secondary)', fontSize: 12 }}>
-                      演讲备注：
-                    </span>
-                  </Flexbox>
-                  <Input.TextArea
-                    aria-label={`第 ${index + 1} 页演讲备注`}
-                    autoSize={{ maxRows: 3, minRows: 1 }}
-                    placeholder="为演讲者提示本页阐述重点或过渡语..."
-                    size="small"
-                    value={slide.speakerNotes ?? ''}
-                    onChange={(e) => handleUpdateSpeakerNotes(index, e.target.value)}
-                  />
-                </Flexbox>
+                ))}
+                <Button
+                  aria-label={`为第 ${selectedIndex + 1} 页添加要点`}
+                  disabled={locked}
+                  icon={<Icon icon={Plus} size={18} />}
+                  type="text"
+                  onClick={() => handleAddPoint(selectedIndex)}
+                />
               </div>
+              <label>
+                {t('presentationStoryboard.visual')}
+                <Input.TextArea
+                  autoSize
+                  aria-label={`第 ${selectedIndex + 1} 页视觉建议`}
+                  disabled={locked}
+                  value={selected.visualSuggestion}
+                  onChange={(e) => handleUpdateVisual(selectedIndex, e.target.value)}
+                />
+              </label>
+              <details>
+                <summary>{t('presentationStoryboard.notes')}</summary>
+                <Input.TextArea
+                  autoSize
+                  aria-label={`第 ${selectedIndex + 1} 页演讲备注`}
+                  disabled={locked}
+                  value={selected.speakerNotes}
+                  onChange={(e) => handleUpdateSpeakerNotes(selectedIndex, e.target.value)}
+                />
+              </details>
             </div>
-          ))}
-        </div>
-
-        <div className={styles.outlineWorkspaceFooter}>
-          <Flexbox horizontal align="center" gap={10}>
-            <Button
-              aria-label="添加页面"
-              icon={<Icon icon={Plus} size={13} />}
-              size="middle"
-              onClick={handleAddSlide}
-            >
-              添加页面
-            </Button>
-            <Button
-              aria-label="AI 整体优化"
-              icon={<Icon icon={Sparkles} size={13} />}
-              loading={aiBusy === 'all'}
-              size="middle"
-              onClick={() => void handleAiOptimizeAll()}
-            >
-              AI 整体优化
-            </Button>
-          </Flexbox>
-
-          <Flexbox horizontal align="center" gap={10}>
-            <Button size="middle" onClick={onBack}>
-              返回修改风格
-            </Button>
-            <Button
-              aria-label="确认大纲并生成"
-              icon={<Icon icon={ArrowRight} size={14} />}
-              size="middle"
-              type="primary"
-              onClick={() => onConfirm({ slides, versionId })}
-            >
-              确认大纲并生成
-            </Button>
-          </Flexbox>
-        </div>
-      </div>
+          )}
+        </Drawer>
+      </section>
     );
   },
 );

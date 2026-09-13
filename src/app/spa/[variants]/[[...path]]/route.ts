@@ -1,4 +1,4 @@
-import { BRANDING_NAME, ORG_NAME } from '@lobechat/business-const';
+import { BRANDING_NAME } from '@lobechat/business-const';
 import { OG_URL } from '@lobechat/const';
 
 import { getServerFeatureFlagsValue } from '@/config/featureFlags';
@@ -195,7 +195,7 @@ async function buildSeoMeta(locale: string): Promise<string> {
     `<meta name="twitter:title" content="${title}" />`,
     `<meta name="twitter:description" content="${description}" />`,
     `<meta name="twitter:image" content="${OG_URL}" />`,
-    `<meta name="twitter:site" content="${isCustomORG ? `@${ORG_NAME}` : '@lobehub'}" />`,
+    `<meta name="twitter:site" content="${isCustomORG ? '@Qingzhou' : '@lobehub'}" />`,
   ].join('\n    ');
 }
 

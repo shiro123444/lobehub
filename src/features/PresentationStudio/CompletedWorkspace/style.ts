@@ -2,6 +2,8 @@ import { createStaticStyles } from 'antd-style';
 
 export const styles = createStaticStyles(({ css, cssVar }) => ({
   bentoCard: css`
+    cursor: pointer;
+
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -12,7 +14,6 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     border-radius: 12px;
 
     background: ${cssVar.colorBgContainer};
-    cursor: pointer;
 
     transition:
       transform 200ms ease,
@@ -20,16 +21,16 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
       border-color 200ms ease;
 
     &:hover {
-      border-color: ${cssVar.colorBorder};
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
       transform: translateY(-2px);
+      border-color: ${cssVar.colorBorder};
+      box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
     }
   `,
   bentoCardSelected: css`
     border-color: ${cssVar.colorPrimary} !important;
     box-shadow:
       0 0 0 2px ${cssVar.colorPrimaryBg},
-      0 8px 24px rgba(0, 0, 0, 0.12) !important;
+      0 8px 24px rgb(0 0 0 / 12%) !important;
   `,
   bentoFrame: css`
     position: relative;
@@ -39,22 +40,23 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
     justify-content: center;
 
-    width: 100%;
     aspect-ratio: 16 / 9;
+    width: 100%;
     border-radius: 8px;
 
     background: #0d0f12;
   `,
   bentoGrid: css`
-    align-content: start;
+    overflow-y: auto;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 16px;
+    align-content: start;
 
     width: 100%;
     height: 100%;
-    padding: 8px 4px 16px;
-    overflow-y: auto;
+    padding-block: 8px 16px;
+    padding-inline: 4px;
 
     animation: presentation-fade-in 220ms ease;
 
@@ -84,6 +86,7 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
   bentoTitle: css`
     overflow: hidden;
+
     font-size: 12px;
     font-weight: 500;
     color: ${cssVar.colorText};
@@ -93,16 +96,25 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
   bottomPaginator: css`
     display: flex;
     flex-shrink: 0;
-    gap: 12px;
+    gap: 8px;
     align-items: center;
+    align-self: flex-end;
     justify-content: center;
 
-    padding: 6px 14px;
+    min-height: 48px;
+    margin-inline-end: 16px;
+    padding: 4px;
     border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: 999px;
 
     background: ${cssVar.colorBgElevated};
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 5%);
+
+    @media (width <= 1000px) {
+      align-self: center;
+      margin-block: 0 64px;
+      margin-inline: 0;
+    }
   `,
   capsuleGroupLeft: css`
     overflow: hidden;
@@ -110,13 +122,14 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     flex: 1;
     gap: 10px;
     align-items: center;
+
     min-width: 0;
   `,
   capsuleGroupRight: css`
     display: flex;
     flex-shrink: 0;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 4px;
     align-items: center;
   `,
   capsuleHeader: css`
@@ -126,22 +139,36 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
     justify-content: space-between;
 
-    padding: 8px 16px;
+    padding-block: 8px;
+    padding-inline: 18px 12px;
     border: 1px solid ${cssVar.colorBorderSecondary};
-    border-radius: 999px;
+    border-radius: 24px;
 
     background: ${cssVar.colorBgElevated};
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 5%);
 
     @media (width <= 768px) {
       flex-direction: column;
       align-items: stretch;
-      border-radius: ${cssVar.borderRadius};
+      padding: 12px;
+      border-radius: 20px;
     }
+  `,
+  capsuleStatus: css`
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 4px;
+    align-items: center;
+
+    font-size: 11px;
+    color: ${cssVar.colorTextDescription};
+    white-space: nowrap;
   `,
   capsuleTitle: css`
     overflow: hidden;
+
     max-width: 260px;
+
     font-size: 14px;
     font-weight: 600;
     color: ${cssVar.colorText};
@@ -149,13 +176,13 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     white-space: nowrap;
   `,
   drawerBody: css`
+    overflow-y: auto;
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 18px;
 
     padding: 16px;
-    overflow-y: auto;
   `,
   drawerEmptyState: css`
     display: flex;
@@ -164,7 +191,8 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
     justify-content: center;
 
-    padding: 22px 12px;
+    padding-block: 22px;
+    padding-inline: 12px;
     border-radius: 8px;
 
     font-size: 12px;
@@ -180,7 +208,8 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
     justify-content: space-between;
 
-    padding: 12px 16px;
+    padding-block: 12px;
+    padding-inline: 16px;
     border-block-end: 1px solid ${cssVar.colorBorderSecondary};
   `,
   drawerRoot: css`
@@ -195,11 +224,11 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     border-radius: 14px;
 
     background: ${cssVar.colorBgContainer};
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
+    box-shadow: -4px 0 20px rgb(0 0 0 / 6%);
 
     transition:
       width 260ms cubic-bezier(0.16, 1, 0.3, 1),
-      margin-left 260ms cubic-bezier(0.16, 1, 0.3, 1),
+      margin-inline-start 260ms cubic-bezier(0.16, 1, 0.3, 1),
       opacity 200ms ease;
   `,
   drawerSection: css`
@@ -210,15 +239,18 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
   drawerSectionContent: css`
     padding: 12px;
     border-radius: 8px;
+
     font-size: 12px;
     line-height: 1.6;
     color: ${cssVar.colorTextSecondary};
+
     background: ${cssVar.colorFillQuaternary};
   `,
   drawerSectionHeader: css`
     display: flex;
     gap: 8px;
     align-items: center;
+
     font-size: 13px;
     font-weight: 600;
     color: ${cssVar.colorText};
@@ -227,16 +259,51 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     display: inline-flex;
     gap: 6px;
     align-items: center;
+
     font-size: 12px;
     color: ${cssVar.colorTextDescription};
+  `,
+  exportActions: css`
+    margin-inline-start: 4px;
+    padding-inline-start: 8px;
+    border-inline-start: 1px solid ${cssVar.colorBorderSecondary};
+  `,
+  iconButton: css`
+    && {
+      display: inline-flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+
+      width: 44px;
+      min-width: 44px;
+      height: 44px;
+      padding: 0;
+      border-radius: 15px;
+
+      box-shadow: none;
+    }
+
+    &[aria-pressed='true'] {
+      color: ${cssVar.colorText};
+      background: ${cssVar.colorFillSecondary};
+    }
+
+    &:focus-visible {
+      outline: 2px solid ${cssVar.colorPrimary};
+      outline-offset: 3px;
+    }
   `,
   filmstripContainer: css`
     position: relative;
 
     overflow: hidden;
     display: flex;
+    flex: 0 0 48px;
     flex-direction: column;
 
+    width: 48px;
+    min-width: 0;
     height: 100%;
     border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: 12px;
@@ -246,6 +313,34 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     transition:
       width 240ms cubic-bezier(0.16, 1, 0.3, 1),
       opacity 200ms ease;
+
+    &[data-open='true'] {
+      flex-basis: 176px;
+      width: 176px;
+    }
+
+    @media (width <= 768px) {
+      &[data-open='true'] {
+        flex-basis: 104px;
+        width: 104px;
+      }
+    }
+  `,
+  filmstripBody: css`
+    overflow-y: auto;
+    flex: 1;
+
+    min-height: 0;
+    padding-block: 0 6px;
+    padding-inline: 6px;
+  `,
+  filmstripHeader: css`
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: flex-end;
+
+    padding: 1px;
   `,
   focusCanvas: css`
     position: relative;
@@ -258,10 +353,10 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
 
     width: 100%;
     min-height: 0;
-    padding: 24px;
+    padding: 16px;
 
     @media (width <= 768px) {
-      padding: 10px;
+      padding: 6px;
     }
   `,
   focusEmpty: css`
@@ -278,6 +373,8 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     text-align: center;
   `,
   focusFrame169: css`
+    cursor: pointer;
+
     position: relative;
 
     overflow: hidden;
@@ -285,18 +382,17 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
     justify-content: center;
 
+    aspect-ratio: 16 / 9;
     width: 100%;
     max-width: min(100%, calc((100vh - 110px) * (16 / 9)));
     max-height: 100%;
-    aspect-ratio: 16 / 9;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: 14px;
 
-    background: #0d0f12;
+    background: ${cssVar.colorBgContainer};
     box-shadow:
-      0 24px 64px -12px rgba(0, 0, 0, 0.56),
-      0 0 0 1px rgba(255, 255, 255, 0.04);
-    cursor: pointer;
+      0 8px 28px -12px rgb(0 0 0 / 16%),
+      0 1px 4px rgb(0 0 0 / 4%);
 
     transition:
       transform 200ms ease,
@@ -304,10 +400,10 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
       border-color 200ms ease;
 
     &:hover {
-      border-color: rgba(255, 255, 255, 0.24);
+      border-color: ${cssVar.colorBorder};
       box-shadow:
-        0 28px 72px -10px rgba(0, 0, 0, 0.65),
-        0 0 0 1px rgba(255, 255, 255, 0.08);
+        0 10px 32px -12px rgb(0 0 0 / 20%),
+        0 1px 4px rgb(0 0 0 / 4%);
 
       [data-role='hover-cue'] {
         opacity: 1;
@@ -321,6 +417,8 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     object-fit: contain;
   `,
   hoverCue: css`
+    pointer-events: none;
+
     position: absolute;
     inset-block-end: 14px;
     inset-inline-end: 16px;
@@ -329,17 +427,17 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     gap: 6px;
     align-items: center;
 
-    padding: 4px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding-block: 4px;
+    padding-inline: 10px;
+    border: 1px solid rgb(255 255 255 / 10%);
     border-radius: 999px;
 
     font-size: 11px;
     color: #fff;
 
-    background: rgba(0, 0, 0, 0.68);
-    backdrop-filter: blur(8px);
     opacity: 0;
-    pointer-events: none;
+    background: rgb(0 0 0 / 68%);
+    backdrop-filter: blur(8px);
 
     transition: opacity 180ms ease;
   `,
@@ -356,6 +454,7 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
   pageCounter: css`
     min-width: 64px;
+
     font-size: 13px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -393,13 +492,13 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
 
     @keyframes presentation-fade-in {
       from {
-        opacity: 0;
         transform: translateY(4px);
+        opacity: 0;
       }
 
       to {
-        opacity: 1;
         transform: translateY(0);
+        opacity: 1;
       }
     }
   `,

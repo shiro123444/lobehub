@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+
 import type {
   PresentationRunner,
   PresentationRunnerResult,
@@ -37,7 +38,7 @@ describe('C-53 ppt-master toolchain', () => {
     );
   });
   it('maps conversion artifacts and rejects unsafe configuration', async () => {
-    const { runner } = makeRunner({
+    const { runner, spawn } = makeRunner({
       exitCode: 0,
       artifacts: [{ path: 'deck.pptx', bytes: new Uint8Array([1]), name: 'deck.pptx' }],
     });
@@ -45,6 +46,12 @@ describe('C-53 ppt-master toolchain', () => {
     await expect(toolchain.convert('/tmp/workspaces/job-1')).resolves.toMatchObject([
       { type: 'pptx', name: 'deck.pptx' },
     ]);
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ['/opt/ppt-master/svg_to_pptx.py', '/tmp/workspaces/job-1', '--animation', 'fade'],
+        shell: false,
+      }),
+    );
     expect(
       () => new PptMasterToolchain({ ...options(runner), qualityScriptPath: '/tmp/evil.py' }),
     ).toThrowError(PresentationToolchainError);

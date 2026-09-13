@@ -41,7 +41,7 @@ export const getNexusImageModelList = (
         },
       ],
       id: NEXUS_IMAGE_PROVIDER,
-      name: 'NEXUS',
+      name: 'Qingzhou',
       source: AiProviderSourceEnum.Builtin,
     },
   ];

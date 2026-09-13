@@ -248,13 +248,50 @@ export interface PresentationPlanner {
 
 export type PresentationJobState = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
+export interface PresentationAnnotation {
+  baseSvgHash: string;
+  elementIndices: number[];
+  expectedVersionId: string;
+  region: { x: number; y: number; width: number; height: number };
+  slideId: string;
+}
+
+export interface PresentationMessageInput {
+  annotation?: PresentationAnnotation;
+  content: string;
+  patch?: { slideId: string; svg: string; notes?: string; expectedVersionId?: string };
+  requestId: string;
+  target: { type: 'deck' } | { type: 'slide'; slideNumber: number };
+  template?: { templateId: string; versionId?: string };
+}
+
+export interface PresentationMessage extends PresentationMessageInput {
+  createdAt: string;
+  error?: string;
+  status: 'queued' | 'applying' | 'applied' | 'failed';
+  versionId?: string;
+}
+
+export interface PresentationRevision {
+  artifactIds: string[];
+  createdAt: string;
+  versionId: string;
+}
+
 export interface PresentationJob {
   artifactIds?: string[];
+  aspectRatio?: string;
   createdAt: string;
   error?: RunError;
   jobId: string;
+  messages?: PresentationMessage[];
+  projectId?: string;
+  revisions?: PresentationRevision[];
+  slideCount?: number;
   state: PresentationJobState;
+  title?: string;
   updatedAt: string;
+  versionId?: string;
 }
 
 export type PresentationExportFormat = 'pptx' | 'svg' | 'pdf' | 'quality-report';
@@ -788,8 +825,9 @@ export const validateSlideScene = (scene: unknown): SlideSceneValidation => {
         return false;
       }
       const crop = (node as { crop?: unknown }).crop as SceneCrop | undefined;
-      if (crop !== undefined && (
-          !isWireRecord(crop) ||
+      if (
+        crop !== undefined &&
+        (!isWireRecord(crop) ||
           !isFiniteNumber(crop.x) ||
           !isFiniteNumber(crop.y) ||
           !isFiniteNumber(crop.width) ||
@@ -797,10 +835,10 @@ export const validateSlideScene = (scene: unknown): SlideSceneValidation => {
           crop.x < 0 ||
           crop.y < 0 ||
           crop.width < 0 ||
-          crop.height < 0
-        )) {
-          return false;
-        }
+          crop.height < 0)
+      ) {
+        return false;
+      }
       if ((node as { kind?: unknown }).kind === 'group') {
         const children = (node as { children?: unknown }).children;
         if (!Array.isArray(children) || !checkGeometry(children as SceneNode[], canvas)) {

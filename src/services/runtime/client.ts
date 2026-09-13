@@ -6,6 +6,7 @@ import type {
   PresentationExportFormat,
   PresentationJob,
   PresentationJobInput,
+  PresentationMessageInput,
   ResumeRunInput,
   RunSnapshot,
   RuntimeEvent,
@@ -73,7 +74,15 @@ export type RuntimePresentationClient = Pick<
   | 'getArtifact'
   | 'exportArtifact'
 > &
-  Partial<Pick<RuntimeClient, 'createImageGeneration' | 'downloadArtifact'>>;
+  Partial<
+    Pick<
+      RuntimeClient,
+      | 'createImageGeneration'
+      | 'downloadArtifact'
+      | 'sendPresentationMessage'
+      | 'listPresentationJobs'
+    >
+  >;
 
 /**
  * Wire-safe job event for presentation jobs. Freezes the seam shape for
@@ -178,6 +187,7 @@ export interface RuntimeClient {
   ) => Promise<PresentationJob | null>;
   getRun: (runId: string, options?: { signal?: AbortSignal }) => Promise<RunSnapshot | null>;
   listPlugins: (options?: { signal?: AbortSignal }) => Promise<PluginDescriptor[]>;
+  listPresentationJobs?: () => Promise<PresentationJob[]>;
   mountPlugin: (
     id: string,
     config?: unknown,
@@ -192,6 +202,10 @@ export interface RuntimeClient {
   retryPresentationJob: (
     jobId: string,
     options?: { signal?: AbortSignal },
+  ) => Promise<PresentationJob>;
+  sendPresentationMessage: (
+    jobId: string,
+    input: PresentationMessageInput,
   ) => Promise<PresentationJob>;
   startRun: (input: StartRunInput, options?: { signal?: AbortSignal }) => Promise<RunSnapshot>;
   subscribe: (
@@ -487,6 +501,16 @@ export class RuntimeClientImpl implements RuntimeClient {
     return (await response.json()) as PresentationJob;
   }
 
+  async listPresentationJobs(): Promise<PresentationJob[]> {
+    const headers = await this.prepareHeaders();
+    const response = await this.fetcher(
+      this.resolveUrl('/api/runtime/presentation/tools/presentation.job.list'),
+      { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: '{}' },
+    );
+    if (!response.ok) throw new Error(`Failed to restore presentations (${response.status})`);
+    return ((await response.json()) as { jobs: PresentationJob[] }).jobs;
+  }
+
   async getPresentationJob(
     jobId: string,
     options?: { signal?: AbortSignal },
@@ -510,6 +534,25 @@ export class RuntimeClientImpl implements RuntimeClient {
       );
     }
 
+    return (await response.json()) as PresentationJob;
+  }
+
+  async sendPresentationMessage(
+    jobId: string,
+    input: PresentationMessageInput,
+  ): Promise<PresentationJob> {
+    const response = await this.fetcher(
+      this.resolveUrl(`${RUNTIME_ENDPOINTS.presentationJob(jobId)}/messages`),
+      {
+        method: 'POST',
+        headers: await this.prepareHeaders(),
+        body: JSON.stringify(input),
+      },
+    );
+    if (!response.ok)
+      throw new Error(
+        `Failed to send presentation message (${response.status}): ${await response.text()}`,
+      );
     return (await response.json()) as PresentationJob;
   }
 

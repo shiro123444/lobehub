@@ -1,4 +1,5 @@
 import { Button, Flexbox, Icon, Tag } from '@lobehub/ui';
+import { Tooltip } from 'antd';
 import {
   FileText,
   Image as ImageIcon,
@@ -43,17 +44,33 @@ export interface ArchitectureDrawerProps {
 
 const getSlotStatusZh = (status?: string): string => {
   switch (status) {
-    case 'ready':
+    case 'ready': {
       return '已就绪';
-    case 'generating':
+    }
+    case 'generating': {
       return '生成中';
-    case 'failed':
+    }
+    case 'failed': {
       return '生成失败';
-    case 'cancelled':
+    }
+    case 'cancelled': {
       return '已取消';
+    }
     case 'pending':
-    default:
+    default: {
       return '待处理';
+    }
+  }
+};
+
+const isImagePreviewUri = (uri: string): boolean => {
+  if (uri.startsWith('/api/runtime/presentation/artifacts/')) return true;
+  if (/^data:image\/(?:png|jpeg|webp);base64,/iu.test(uri)) return true;
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
   }
 };
 
@@ -131,6 +148,31 @@ export const ArchitectureDrawer = memo<ArchitectureDrawerProps>(
       });
     }, [selectedJobSlots, currentSlideId, selectedSlide?.artifactId, currentSlideNumber]);
 
+    const currentSlideImages = useMemo(() => {
+      const refs = new Set(
+        Array.isArray(metadata?.generatedAssetRefs)
+          ? metadata.generatedAssetRefs.filter((ref): ref is string => typeof ref === 'string')
+          : [],
+      );
+      const represented = new Set(
+        currentSlideSlots
+          .filter((slot) => slot.status === 'ready')
+          .flatMap((slot) => slot.artifactIds),
+      );
+      return selectedJobArtifacts.filter((artifact) => {
+        if (
+          !refs.has(artifact.artifactId) ||
+          represented.has(artifact.artifactId) ||
+          artifact.status !== 'ready' ||
+          artifact.type !== 'image' ||
+          !['image/png', 'image/jpeg', 'image/webp'].includes(artifact.mimeType ?? '')
+        )
+          return false;
+        represented.add(artifact.artifactId);
+        return true;
+      });
+    }, [metadata?.generatedAssetRefs, currentSlideSlots, selectedJobArtifacts]);
+
     return (
       <aside
         aria-label="当前页架构与资产抽屉"
@@ -155,13 +197,15 @@ export const ArchitectureDrawer = memo<ArchitectureDrawerProps>(
               第 {currentIndex + 1} 页
             </Tag>
           </Flexbox>
-          <Button
-            aria-label="关闭抽屉"
-            icon={<Icon icon={X} size={14} />}
-            size="small"
-            type="text"
-            onClick={onClose}
-          />
+          <Tooltip title="关闭">
+            <Button
+              aria-label="关闭抽屉"
+              className={styles.iconButton}
+              icon={<Icon aria-hidden icon={X} size={22} />}
+              type="text"
+              onClick={onClose}
+            />
+          </Tooltip>
         </div>
 
         <div className={styles.drawerBody}>
@@ -230,6 +274,7 @@ export const ArchitectureDrawer = memo<ArchitectureDrawerProps>(
                           {slot.label || `槽位 ${slot.slotId}`}
                         </span>
                         <Tag
+                          size="small"
                           color={
                             slot.status === 'ready'
                               ? 'success'
@@ -239,7 +284,6 @@ export const ArchitectureDrawer = memo<ArchitectureDrawerProps>(
                                   ? 'processing'
                                   : 'default'
                           }
-                          size="small"
                         >
                           {getSlotStatusZh(slot.status)}
                           <span style={{ display: 'none' }}>{slot.status}</span>
@@ -294,7 +338,78 @@ export const ArchitectureDrawer = memo<ArchitectureDrawerProps>(
                   );
                 })}
               </div>
-            ) : (
+            ) : null}
+
+            {currentSlideImages.map((artifact, index) => {
+              const uri = resolveArtifactUri?.(artifact.artifactId);
+              const preview = uri && isImagePreviewUri(uri) ? uri : undefined;
+              const name = currentSlideImages.length > 1 ? `配图 ${index + 1}` : '配图';
+              return (
+                <div
+                  className={styles.drawerSectionContent}
+                  data-testid={`drawer-image-${artifact.artifactId}`}
+                  key={artifact.artifactId}
+                >
+                  <div
+                    aria-label={`第 ${currentSlideNumber} 页${name}`}
+                    role="group"
+                    style={{
+                      background: 'transparent',
+                      border: 0,
+                      color: 'inherit',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      padding: 0,
+                      textAlign: 'start',
+                      width: '100%',
+                    }}
+                  >
+                    <div
+                      style={{
+                        alignItems: 'center',
+                        aspectRatio: '4 / 3',
+                        background: 'var(--ant-color-fill-quaternary)',
+                        borderRadius: 12,
+                        display: 'flex',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        width: '100%',
+                      }}
+                    >
+                      {preview ? (
+                        <img
+                          alt={name}
+                          loading="lazy"
+                          src={preview}
+                          style={{
+                            display: 'block',
+                            height: '100%',
+                            objectFit: 'contain',
+                            width: '100%',
+                          }}
+                        />
+                      ) : (
+                        <Icon aria-hidden icon={ImageIcon} size={28} />
+                      )}
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        width: '100%',
+                      }}
+                    >
+                      {name}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {currentSlideSlots.length === 0 && currentSlideImages.length === 0 && (
               <div className={styles.drawerEmptyState}>
                 <Icon icon={ImageIcon} size={16} />
                 <span>当前页暂无素材插图槽位</span>

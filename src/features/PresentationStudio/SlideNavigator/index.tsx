@@ -7,6 +7,8 @@ import { styles } from './style';
 
 export interface SlideNavigatorProps {
   className?: string;
+  /** Compact completed-editor rail: thumbnails and page numbers only. */
+  compact?: boolean;
   hasSelection: boolean;
   onSelect: (artifactId: string) => void;
   selectedArtifactId: string | null;
@@ -20,7 +22,7 @@ export interface SlideNavigatorProps {
  * silently hidden.
  */
 export const SlideNavigator = memo<SlideNavigatorProps>(
-  ({ className, hasSelection, onSelect, selectedArtifactId, slides }) => {
+  ({ className, compact = false, hasSelection, onSelect, selectedArtifactId, slides }) => {
     const selectable = slides.filter((slide) => slide.status === 'ready');
 
     const handleKeyDown = useCallback(
@@ -51,15 +53,18 @@ export const SlideNavigator = memo<SlideNavigatorProps>(
       <section
         aria-label="Slide navigator"
         className={className ? `${styles.container} ${className}` : styles.container}
+        data-compact={compact ? 'true' : undefined}
         data-testid="slide-navigator"
       >
-        <Flexbox horizontal align="center" gap={8}>
-          <Layers size={14} style={{ opacity: 0.6 }} />
-          <span className={styles.title}>
-            幻灯片列表
-            <span style={{ display: 'none' }}>Slides</span>
-          </span>
-        </Flexbox>
+        {!compact && (
+          <Flexbox horizontal align="center" gap={8}>
+            <Layers size={14} style={{ opacity: 0.6 }} />
+            <span className={styles.title}>
+              幻灯片列表
+              <span style={{ display: 'none' }}>Slides</span>
+            </span>
+          </Flexbox>
+        )}
 
         {slides.length === 0 ? (
           <div className={styles.empty} data-testid="slide-navigator-empty">
@@ -80,6 +85,7 @@ export const SlideNavigator = memo<SlideNavigatorProps>(
         ) : (
           <div
             aria-label="Slide thumbnails"
+            aria-orientation="vertical"
             className={styles.grid}
             data-testid="slide-navigator-grid"
             role="listbox"
@@ -101,6 +107,11 @@ export const SlideNavigator = memo<SlideNavigatorProps>(
                   key={slide.artifactId}
                   role="option"
                   tabIndex={ready ? 0 : -1}
+                  title={
+                    compact
+                      ? String(slide.metadata?.title ?? slide.name ?? `Slide ${index + 1}`)
+                      : undefined
+                  }
                   onClick={() => {
                     if (ready) onSelect(slide.artifactId);
                   }}
@@ -124,9 +135,18 @@ export const SlideNavigator = memo<SlideNavigatorProps>(
                   </div>
                   <div className={styles.thumbMeta}>
                     <span>
-                      第 {index + 1} 页<span style={{ display: 'none' }}>Slide {index + 1}</span>
+                      {compact ? (
+                        String(index + 1).padStart(2, '0')
+                      ) : (
+                        <>
+                          第 {index + 1} 页
+                          <span style={{ display: 'none' }}>Slide {index + 1}</span>
+                        </>
+                      )}
                     </span>
-                    <span className={styles.thumbStatus}>{slide.status}</span>
+                    {(!compact || !ready) && (
+                      <span className={styles.thumbStatus}>{slide.status}</span>
+                    )}
                   </div>
                 </div>
               );

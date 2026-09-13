@@ -54,7 +54,7 @@ export default {
   'gallery.empty.title': 'No Images Yet',
   'gallery.title': 'Gallery',
   'notSupportGuide.desc':
-    'The current deployment mode does not support AI image generation. Switch to the <1>server database deployment mode</1>, or use <3>Nexus Cloud</3>.',
+    'The current deployment mode does not support AI image generation. Switch to the <1>server database deployment mode</1>, or use <3>Qingzhou Cloud</3>.',
   'notSupportGuide.features.fileIntegration.desc':
     'Deep integration with the file management system; generated images are automatically saved to the file system for unified management and organization.',
   'notSupportGuide.features.fileIntegration.title': 'File System Integration',

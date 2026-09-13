@@ -62,7 +62,7 @@ const currentAgentMeta = (s: AgentStoreState): MetaData => {
     description: data?.description || undefined,
     marketIdentifier: data?.marketIdentifier || undefined,
     tags: data?.tags,
-    title: data?.title || undefined,
+    title: data?.title === 'Lobe AI' ? 'jumi AI' : data?.title || undefined,
   };
 };
 
@@ -82,7 +82,7 @@ const getAgentMetaById =
       description: data.description || undefined,
       marketIdentifier: data.marketIdentifier || undefined,
       tags: data.tags,
-      title: data.title || undefined,
+      title: data.title === 'Lobe AI' ? 'jumi AI' : data.title || undefined,
     };
   };
 

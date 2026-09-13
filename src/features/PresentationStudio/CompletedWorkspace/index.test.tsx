@@ -100,10 +100,13 @@ describe('CompletedWorkspace', () => {
         retryPendingKeys={{}}
         retrySlot={vi.fn()}
         selectedJob={mockJob}
-        selectedJobArtifacts={mockSlides}
         selectedJobSlots={mockSlots}
         selectedSlide={mockSlides[0]}
         slideArtifacts={mockSlides}
+        selectedJobArtifacts={[
+          ...mockSlides,
+          { ...mockSlides[0], artifactId: 'deck-pptx', type: 'pptx' },
+        ]}
         onAiModify={vi.fn()}
         onExport={onExport}
         onRetryJob={vi.fn()}
@@ -113,9 +116,10 @@ describe('CompletedWorkspace', () => {
 
     // Top capsule floating bar
     expect(screen.getByTestId('presentation-editor-toolbar')).toBeInTheDocument();
-    expect(screen.getByTestId('presentation-completed-tag')).toHaveTextContent('已完成 · 共 3 页');
+    expect(screen.getByTestId('presentation-completed-tag')).toHaveTextContent('已完成');
     expect(screen.getByText('AI 演示文稿')).toBeInTheDocument();
-    expect(screen.getByText('商务科技')).toBeInTheDocument();
+    expect(screen.queryByText('商务科技')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue prompting AI' })).toHaveTextContent('');
     expect(screen.getByRole('button', { name: '全景网格' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Quick export presentation/i })).toBeInTheDocument();
 
@@ -149,10 +153,13 @@ describe('CompletedWorkspace', () => {
         retryPendingKeys={{}}
         retrySlot={vi.fn()}
         selectedJob={mockJob}
-        selectedJobArtifacts={mockSlides}
         selectedJobSlots={mockSlots}
         selectedSlide={mockSlides[0]}
         slideArtifacts={mockSlides}
+        selectedJobArtifacts={[
+          ...mockSlides,
+          { ...mockSlides[0], artifactId: 'deck-pptx', type: 'pptx' },
+        ]}
         onAiModify={vi.fn()}
         onExport={vi.fn()}
         onRetryJob={vi.fn()}
@@ -187,10 +194,13 @@ describe('CompletedWorkspace', () => {
         retryPendingKeys={{}}
         retrySlot={vi.fn()}
         selectedJob={mockJob}
-        selectedJobArtifacts={mockSlides}
         selectedJobSlots={mockSlots}
         selectedSlide={mockSlides[0]}
         slideArtifacts={mockSlides}
+        selectedJobArtifacts={[
+          ...mockSlides,
+          { ...mockSlides[0], artifactId: 'deck-pptx', type: 'pptx' },
+        ]}
         onAiModify={vi.fn()}
         onExport={vi.fn()}
         onRetryJob={vi.fn()}
@@ -238,10 +248,13 @@ describe('CompletedWorkspace', () => {
         retryPendingKeys={{}}
         retrySlot={vi.fn()}
         selectedJob={mockJob}
-        selectedJobArtifacts={mockSlides}
         selectedJobSlots={mockSlots}
         selectedSlide={mockSlides[0]}
         slideArtifacts={mockSlides}
+        selectedJobArtifacts={[
+          ...mockSlides,
+          { ...mockSlides[0], artifactId: 'deck-pptx', type: 'pptx' },
+        ]}
         onAiModify={vi.fn()}
         onExport={onExport}
         onRetryJob={vi.fn()}
@@ -250,7 +263,7 @@ describe('CompletedWorkspace', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Quick export presentation/i }));
-    expect(onExport).toHaveBeenCalledWith('slide-1', 'pptx');
+    expect(onExport).toHaveBeenCalledWith('deck-pptx', 'pptx');
   });
 
   it('supports toggling the collapsible slide filmstrip', () => {
@@ -265,10 +278,13 @@ describe('CompletedWorkspace', () => {
         retryPendingKeys={{}}
         retrySlot={vi.fn()}
         selectedJob={mockJob}
-        selectedJobArtifacts={mockSlides}
         selectedJobSlots={mockSlots}
         selectedSlide={mockSlides[0]}
         slideArtifacts={mockSlides}
+        selectedJobArtifacts={[
+          ...mockSlides,
+          { ...mockSlides[0], artifactId: 'deck-pptx', type: 'pptx' },
+        ]}
         onAiModify={vi.fn()}
         onExport={vi.fn()}
         onRetryJob={vi.fn()}
@@ -281,6 +297,10 @@ describe('CompletedWorkspace', () => {
 
     fireEvent.click(toggleBtn);
     expect(screen.getByRole('button', { name: '收起胶卷' })).toBeInTheDocument();
-    expect(screen.getByText('缩略胶卷')).toBeInTheDocument();
+    expect(screen.queryByText('缩略胶卷')).not.toBeInTheDocument();
+    expect(screen.queryByText('幻灯片列表')).not.toBeInTheDocument();
+    expect(screen.getByTestId('slide-navigator')).toHaveAttribute('data-compact', 'true');
+    expect(screen.getByTestId('slide-navigator-item-slide-1')).toHaveTextContent('01');
+    expect(screen.getByTestId('slide-navigator-item-slide-1')).not.toHaveTextContent('ready');
   });
 });

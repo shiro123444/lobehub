@@ -59,7 +59,7 @@ export const BuiltinDetailProvider = ({ children, identifier }: BuiltinDetailPro
   });
 
   const value: DetailContextValue = {
-    author: 'LobeHub',
+    author: 'Qingzhou',
     authorUrl: appOrigin,
     config: null as any, // Builtin tools don't have provider config
     description: meta?.description || '',

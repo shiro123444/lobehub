@@ -1,10 +1,6 @@
-import isEqual from 'fast-deep-equal';
-
-import { useAiInfraStore } from '@/store/aiInfra';
+import { JUMI_CHAT_MODELS } from '@/const/jumi';
 import { type EnabledProviderWithModels } from '@/types/aiProvider';
 
 export const useEnabledChatModels = (): EnabledProviderWithModels[] => {
-  const enabledChatModelList = useAiInfraStore((s) => s.enabledChatModelList, isEqual);
-
-  return enabledChatModelList || [];
+  return JUMI_CHAT_MODELS;
 };

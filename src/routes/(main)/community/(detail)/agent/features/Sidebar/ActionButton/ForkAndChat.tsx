@@ -53,7 +53,7 @@ const ForkAndChat = memo<{ mobile?: boolean }>(({ mobile }) => {
         return;
       }
 
-      // Step 2: Create a local fork owned by the current Nexus user.
+      // Step 2: Create a local fork owned by the current Qingzhou user.
       if (!config) throw new Error('Agent config is missing');
 
       const agentData = {

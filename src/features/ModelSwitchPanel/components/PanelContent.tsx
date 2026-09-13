@@ -88,7 +88,10 @@ export const PanelContent: FC<PanelContentProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: panelHeight,
+        height:
+          enabledList.reduce((count, provider) => count + provider.children.length, 0) === 1
+            ? 140
+            : panelHeight,
         position: 'relative',
         width: DEFAULT_WIDTH,
       }}

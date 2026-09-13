@@ -32,14 +32,21 @@ export interface PresentationQualityReport {
 
 export interface PresentationWorkerContext {
   readonly abortSignal?: AbortSignal;
-  readonly convert: (workspacePath: string) => Promise<readonly PresentationWorkerArtifact[]>;
+  readonly convert: (
+    workspacePath: string,
+    signal?: AbortSignal,
+  ) => Promise<readonly PresentationWorkerArtifact[]>;
   readonly eventPublisher?: PresentationJobEventPublisherPort;
   readonly eventScope?: PresentationEventScope;
   readonly jobId: string;
   /** Short aliases for callers constructing a worker context by hand. */
   readonly publisher?: PresentationJobEventPublisherPort;
-  readonly qualityCheck: (workspacePath: string) => Promise<PresentationQualityReport>;
+  readonly qualityCheck: (
+    workspacePath: string,
+    signal?: AbortSignal,
+  ) => Promise<PresentationQualityReport>;
   readonly scope?: PresentationEventScope;
+  readonly versionId?: string;
   readonly workspace: PresentationWorkerWorkspace;
 }
 
@@ -205,7 +212,9 @@ export class InMemoryPresentationPlanWorker {
         const path = `svg_output/${String(slideIndex + 1).padStart(3, '0')}.svg`;
         assertPresentationWorkerRelativePath(path);
         await workspace.write(path, slide.svg);
-        const previewArtifactId = `${context.jobId}:preview:${slide.slideId}`;
+        if (slide.notes?.trim())
+          await workspace.write(`notes/${String(slideIndex + 1).padStart(3, '0')}.md`, slide.notes);
+        const previewArtifactId = `${context.jobId}:${context.versionId ?? 'initial'}:preview:${slide.slideId}`;
         previewArtifactIds.push(previewArtifactId);
         publishWorkerProgress(
           context,
@@ -216,7 +225,13 @@ export class InMemoryPresentationPlanWorker {
             artifact: {
               artifactId: previewArtifactId,
               metadata: {
+                ...(typeof slide.metadata?.notes === 'string'
+                  ? { notes: slide.metadata.notes }
+                  : {}),
+                ...(slide.notes !== undefined ? { notes: slide.notes } : {}),
                 order: slideIndex + 1,
+                slideNumber: slideIndex + 1,
+                aspectRatio: validated.aspectRatio,
                 slideId: slide.slideId,
                 title:
                   typeof slide.metadata?.title === 'string'
@@ -253,7 +268,7 @@ export class InMemoryPresentationPlanWorker {
           progress: 76,
           totalSlides: validated.slides.length,
         });
-        qualityReport = await context.qualityCheck(workspace.path);
+        qualityReport = await context.qualityCheck(workspace.path, context.abortSignal);
         qualityReportForEvent = qualityReport;
       } catch (error) {
         throw new PresentationWorkerError(
@@ -276,7 +291,8 @@ export class InMemoryPresentationPlanWorker {
           progress: 88,
           totalSlides: validated.slides.length,
         });
-        artifacts = await context.convert(workspace.path);
+        artifacts = await context.convert(workspace.path, context.abortSignal);
+        throwIfAborted(context.abortSignal);
       } catch (error) {
         throw new PresentationWorkerError(
           'PRESENTATION_WORKER_FAILED',
@@ -309,25 +325,37 @@ export class InMemoryPresentationPlanWorker {
           metadata: artifact.metadata ? cloneValue(artifact.metadata) : undefined,
         };
       });
-      const hasSlideArtifacts = cloned.some((a) => a.type === 'svg' || a.metadata?.slideId);
-      const allArtifacts: PresentationWorkerArtifact[] = hasSlideArtifacts
-        ? cloned
-        : [
-            ...cloned,
-            ...validated.slides.map((slide, index) => ({
-              artifactId: `${context.jobId}:slide:${slide.slideId ?? index + 1}`,
-              bytes: new TextEncoder().encode(slide.svg),
-              metadata: {
-                jobId: context.jobId,
-                order: slide.order,
-                slideId: slide.slideId,
-                type: 'svg',
-              },
-              mimeType: 'image/svg+xml',
-              name: `${slide.slideId ?? `slide-${index + 1}`}.svg`,
-              type: 'svg',
-            })),
-          ];
+      const artifactPrefix = context.versionId
+        ? `${context.jobId}:${context.versionId}`
+        : context.jobId;
+      const allArtifacts: PresentationWorkerArtifact[] = [
+        ...cloned
+          .filter((artifact) => artifact.type !== 'svg')
+          .map((artifact, index) => ({
+            ...artifact,
+            artifactId: `${artifactPrefix}:artifact:${index}`,
+            metadata: { ...artifact.metadata, artifactRole: 'deck', versionId: context.versionId },
+          })),
+        ...validated.slides.map((slide, index) => ({
+          artifactId: `${artifactPrefix}:slide:${slide.slideId ?? index + 1}`,
+          bytes: new TextEncoder().encode(slide.svg),
+          metadata: {
+            ...slide.metadata,
+            ...(slide.notes !== undefined ? { notes: slide.notes } : {}),
+            artifactRole: 'slide',
+            aspectRatio: validated.aspectRatio,
+            jobId: context.jobId,
+            order: slide.order,
+            slideNumber: index + 1,
+            slideId: slide.slideId,
+            versionId: context.versionId,
+            type: 'svg',
+          },
+          mimeType: 'image/svg+xml',
+          name: `${slide.slideId ?? `slide-${index + 1}`}.svg`,
+          type: 'svg',
+        })),
+      ];
 
       const snapshots = allArtifacts.map((artifact, index) =>
         createPresentationArtifactSnapshot(context.jobId, {

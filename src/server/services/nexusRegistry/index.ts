@@ -1,30 +1,24 @@
 import { createHash } from 'node:crypto';
 
 import { type LobeChatDatabase } from '@lobechat/database';
-import { nanoid } from '@lobechat/utils';
 import {
   type NewNexusRegistryItem,
   type NexusRegistryItem,
-  type NexusRegistryReviewActionItem,
-  type NexusRegistrySafetyScanItem,
   nexusRegistryItems,
+  type NexusRegistryReviewActionItem,
   nexusRegistryReviewActions,
+  type NexusRegistrySafetyScanItem,
   nexusRegistrySafetyScans,
   nexusRegistrySyncRuns,
 } from '@lobechat/database/schemas';
-import { and, count, desc, eq, ilike, inArray, or } from 'drizzle-orm';
+import { nanoid } from '@lobechat/utils';
 import debug from 'debug';
+import { and, count, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 
-import { GitHub } from '@/server/modules/GitHub';
 import { UserModel } from '@/database/models/user';
+import { GitHub } from '@/server/modules/GitHub';
 import { DiscoverService } from '@/server/services/discover';
 import { MarketService } from '@/server/services/market';
-import {
-  type GitHubSkillSource,
-  loadGitHubSkillSource,
-} from '@/server/services/nexusRegistry/skillSource';
-import { analyzeNexusRegistrySkill } from '@/server/services/nexusRegistry/skillIntelligence';
-import { analyzeRegistrySafety } from '@/server/services/nexusRegistry/reviewSafety';
 import {
   AUTO_REVIEWER_ID,
   decideReview,
@@ -35,13 +29,19 @@ import {
   type ReviewDecision,
   type SafetyVerdict,
 } from '@/server/services/nexusRegistry/decide';
+import { analyzeRegistrySafety } from '@/server/services/nexusRegistry/reviewSafety';
+import { analyzeNexusRegistrySkill } from '@/server/services/nexusRegistry/skillIntelligence';
+import {
+  type GitHubSkillSource,
+  loadGitHubSkillSource,
+} from '@/server/services/nexusRegistry/skillSource';
 import type {
   DiscoverMcpDetail,
   DiscoverMcpItem,
   DiscoverPluginDetail,
   DiscoverPluginItem,
-  DiscoverSkillItem,
   DiscoverSkillDetail,
+  DiscoverSkillItem,
   McpListResponse,
   PluginListResponse,
   SkillCategoryItem,
@@ -54,10 +54,10 @@ import type {
   NexusRegistryListParams,
   NexusRegistryListResponse,
   NexusRegistryLookupParams,
-  NexusRegistrySyncParams,
-  NexusRegistrySyncResponse,
   NexusRegistryStatusUpdateParams,
   NexusRegistrySubmitParams,
+  NexusRegistrySyncParams,
+  NexusRegistrySyncResponse,
 } from '@/types/nexusRegistry';
 
 const log = debug('nexus:registry');
@@ -130,7 +130,7 @@ const buildIdentifier = (
   const identifier = value.identifier?.trim();
   if (identifier) return identifier;
 
-  const github = new GitHub({ userAgent: 'LobeHub-Nexus-Registry' });
+  const github = new GitHub({ userAgent: 'Qingzhou-Registry' });
   if (value.repositoryUrl?.trim()) {
     try {
       return github.generateIdentifier(github.parseRepoUrl(value.repositoryUrl.trim()));
@@ -150,8 +150,8 @@ const mergeMetadata = (
   base: Record<string, unknown> | null | undefined,
   next?: Record<string, unknown>,
 ): Record<string, unknown> => ({
-  ...(base ?? {}),
-  ...(next ?? {}),
+  ...base,
+  ...next,
 });
 
 const readAiMetadata = (value: Record<string, unknown>): Record<string, unknown> => {
@@ -198,12 +198,12 @@ const skillNeedsHydration = (item: NexusRegistryItem): boolean => {
 
   return Boolean(
     (item.repositoryUrl && !readString(raw, ['content'])) ||
-      !item.description ||
-      !item.category ||
-      readString(raw, ['summary']) !== analysis.summary ||
-      readString(raw, ['category']) !== analysis.category ||
-      !rawInstallation.agent ||
-      !rawInstallation.human,
+    !item.description ||
+    !item.category ||
+    readString(raw, ['summary']) !== analysis.summary ||
+    readString(raw, ['category']) !== analysis.category ||
+    !rawInstallation.agent ||
+    !rawInstallation.human,
   );
 };
 
@@ -335,7 +335,8 @@ const toSkillItem = (item: NexusRegistryItem): SkillListResponse['items'][number
   return {
     ...raw,
     author: readString(raw, ['author']) || item.authorName || undefined,
-    category: readString(raw, ['category']) || readString(ai, ['category']) || item.category || undefined,
+    category:
+      readString(raw, ['category']) || readString(ai, ['category']) || item.category || undefined,
     commentCount: toNumber(raw.commentCount),
     createdAt: toIso(readString(raw, ['createdAt']) || item.publishedAt || item.createdAt),
     description:
@@ -358,12 +359,11 @@ const toSkillItem = (item: NexusRegistryItem): SkillListResponse['items'][number
     ratingAvg: toNumber(raw.ratingAvg, toNumber(metadata.rating)),
     ratingCount: toNumber(raw.ratingCount),
     resourcesCount: toNumber(raw.resourcesCount, Object.keys(resources).length),
-    tags:
-      Array.isArray(raw.tags)
-        ? (raw.tags as string[])
-        : Array.isArray(ai.tags)
-          ? (ai.tags as string[])
-          : item.tags,
+    tags: Array.isArray(raw.tags)
+      ? (raw.tags as string[])
+      : Array.isArray(ai.tags)
+        ? (ai.tags as string[])
+        : item.tags,
     updatedAt: toIso(readString(raw, ['updatedAt']) || item.updatedAt),
     version: readString(raw, ['version']) || item.version || '',
   } as SkillListResponse['items'][number];
@@ -422,7 +422,7 @@ const toPluginItem = (item: NexusRegistryItem): DiscoverPluginItem => {
   const description = readString(raw, ['description']) || item.description || '';
 
   return {
-    author: item.authorName || readString(raw, ['author']) || 'NEXUS',
+    author: item.authorName || readString(raw, ['author']) || 'Qingzhou',
     avatar: item.authorAvatarUrl || readString(raw, ['icon', 'avatar']) || '',
     category: (item.category as DiscoverPluginItem['category']) || undefined,
     createdAt: toIso(readString(raw, ['createdAt']) || item.publishedAt || item.createdAt),
@@ -476,17 +476,14 @@ const extractGithubOwner = (repositoryUrl?: string | null): string | undefined =
   const url = repositoryUrl?.trim();
   if (!url) return undefined;
   try {
-    const github = new GitHub({ userAgent: 'LobeHub-Nexus-Registry' });
+    const github = new GitHub({ userAgent: 'Qingzhou-Registry' });
     return github.parseRepoUrl(url).owner;
   } catch {
     return undefined;
   }
 };
 
-const computeContentHash = (input: {
-  content?: string;
-  manifest?: Record<string, unknown>;
-}) =>
+const computeContentHash = (input: { content?: string; manifest?: Record<string, unknown> }) =>
   createHash('sha256')
     .update(JSON.stringify({ content: input.content ?? '', manifest: input.manifest ?? {} }))
     .digest('hex');
@@ -533,23 +530,22 @@ export class NexusRegistryService {
       await UserModel.makeSureUserExist(this.db, analysisUserId);
     }
 
-    const analysis =
-      shouldAnalyze
-        ? await analyzeNexusRegistrySkill(this.db, {
-            content: nextContent,
-            description: item.description || readString(raw, ['summary']),
-            identifier: item.identifier,
-            kind: item.kind,
-            locale: item.locale || undefined,
-            manifest: mergeMetadata(toPlainObject(item.manifest), source?.manifest),
-            name: item.name,
-            raw,
-            repositoryUrl: item.repositoryUrl,
-            resources: source?.resources,
-            submittedBy: analysisUserId,
-            tags: item.tags,
+    const analysis = shouldAnalyze
+      ? await analyzeNexusRegistrySkill(this.db, {
+          content: nextContent,
+          description: item.description || readString(raw, ['summary']),
+          identifier: item.identifier,
+          kind: item.kind,
+          locale: item.locale || undefined,
+          manifest: mergeMetadata(toPlainObject(item.manifest), source?.manifest),
+          name: item.name,
+          raw,
+          repositoryUrl: item.repositoryUrl,
+          resources: source?.resources,
+          submittedBy: analysisUserId,
+          tags: item.tags,
         })
-        : undefined;
+      : undefined;
     const effectiveAnalysis = analysis ?? storedAnalysis;
     const nextManifest = mergeMetadata(toPlainObject(item.manifest), source?.manifest);
     const hasSourceUpdates =
@@ -696,7 +692,7 @@ export class NexusRegistryService {
     const source = params.source ?? 'user';
     const status = params.status ?? (source === 'official' ? 'active' : 'pending');
     const repositoryUrl = params.repositoryUrl?.trim();
-    const github = new GitHub({ userAgent: 'LobeHub-Nexus-Registry' });
+    const github = new GitHub({ userAgent: 'Qingzhou-Registry' });
     let upstreamSource = params.upstreamSource?.trim();
     let upstreamIdentifier = params.upstreamIdentifier?.trim();
     if (repositoryUrl) {
@@ -798,9 +794,7 @@ export class NexusRegistryService {
       .returning();
 
     const hydrated =
-      item?.kind === 'skill'
-        ? await this.ensureSkillContent(item, params.submittedBy)
-        : item;
+      item?.kind === 'skill' ? await this.ensureSkillContent(item, params.submittedBy) : item;
 
     return { created: !existing, item: hydrated ?? item };
   };
@@ -945,7 +939,7 @@ export class NexusRegistryService {
     options: { scanId?: string; trigger?: 'cron' | 'rescan' | 'submit' | 'update' } = {},
   ): Promise<{ decision: ReviewDecision; scanId?: string }> => {
     const item = await this.getById(itemId);
-    if (!item) throw new Error(`Nexus registry item ${itemId} not found`);
+    if (!item) throw new Error(`Qingzhou registry item ${itemId} not found`);
 
     const staticFlags = readOrganizerFlags(item);
 
@@ -1506,7 +1500,10 @@ export class NexusRegistryService {
 
         if (relatedIdentifiers.has(candidate.identifier)) score += 100;
         if (relatedNames.has(candidate.name)) score += 60;
-        if (category && (candidate.category || readString(candidateAi, ['category'])) === category) {
+        if (
+          category &&
+          (candidate.category || readString(candidateAi, ['category'])) === category
+        ) {
           score += 20;
         }
 

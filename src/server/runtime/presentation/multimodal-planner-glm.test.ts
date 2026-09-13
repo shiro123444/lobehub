@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type {
   PresentationJobInput,
+  PresentationPlan,
   RuntimeScope,
 } from '../../../../packages/runtime-contracts/src';
+import type { ImageGenerationSlot } from './image-generation-planner';
 import type { GLMMultimodalChatPort } from './multimodal-chat-provider-glm';
 import { createGLMPresentationPlanner } from './multimodal-planner-glm';
+import { createRevisionAssetPlanner } from './revision-assets';
+import { extractPlanTemplate } from './templates';
 
 const mockScope: RuntimeScope = {
   sessionId: 'test-session',
@@ -233,6 +237,7 @@ describe('GLMPresentationPlanner (C-106)', () => {
           generatedImageSlots: [
             {
               assetRefs: [{ ref: 'https://cdn.example.com/hero.png' }],
+              layout: { fit: 'contain', height: 0.4, width: 0.8, x: 0.1, y: 0.3 },
               slideId: 'slide-1',
               slotId: 'hero-visual',
               state: 'ready',
@@ -249,7 +254,10 @@ describe('GLMPresentationPlanner (C-106)', () => {
     const svg = plan.slides[0].svg;
     expect(svg).toContain('href="https://cdn.example.com/hero.png"');
     expect(svg.indexOf('<image')).toBeLessThan(svg.indexOf('<text'));
-    expect(svg).toContain('x="58%"');
+    expect(svg).toContain('x="96"');
+    expect(svg).toContain('y="162"');
+    expect(svg).toContain('width="768"');
+    expect(svg).toContain('preserveAspectRatio="xMidYMid meet"');
   });
 
   it('fails honestly when the model omits a requested slide or returns invalid SVG', async () => {
@@ -285,4 +293,470 @@ describe('GLMPresentationPlanner (C-106)', () => {
       ),
     ).rejects.toMatchObject({ code: 'PLAN_INVALID' });
   });
+});
+
+describe('dynamic image revision and learned layout planning', () => {
+  const imageHref = '/api/runtime/presentation/artifacts/product-old';
+  const slideSvg = (text: string, image = '') =>
+    `<svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg"><text x="40" y="100">${text}</text>${image}</svg>`;
+  const basePlan: PresentationPlan = {
+    aspectRatio: '16:9',
+    planId: 'base',
+    slides: [
+      { order: 1, slideId: 'intro', svg: slideSvg('Intro') },
+      {
+        order: 2,
+        slideId: 'product',
+        svg: slideSvg(
+          'Product',
+          `<image href="${imageHref}" x="520" y="130" width="390" height="300"/>`,
+        ),
+      },
+      { order: 3, slideId: 'outro', svg: slideSvg('Outro') },
+    ],
+    sourceVersionIds: [],
+    title: 'Deck',
+  };
+  const jobInput: PresentationJobInput = {
+    notebookId: 'nb',
+    slideCount: 3,
+    sourceVersionIds: [],
+    title: 'Deck',
+  };
+  const revision = {
+    content: 'Replace the product photograph and put the text on the left',
+    requestId: 'rev-1',
+    target: { slideNumber: 2, type: 'slide' as const },
+  };
+  const makePort = (result: object): GLMMultimodalChatPort => ({
+    chat: vi.fn(async () => ({
+      choices: [
+        { index: 0, message: { content: JSON.stringify(result), role: 'assistant' as const } },
+      ],
+      created: 1,
+      id: 'response',
+      model: 'test',
+    })),
+    manifest: {
+      displayName: 'test',
+      model: 'test',
+      providerId: 'test',
+      supportsIdempotency: true,
+      supportsVision: true,
+    },
+    providerId: 'test',
+  });
+
+  it('generates a real replacement reference, arranges it in the designed region and retains both other pages', async () => {
+    const assetPlanner = createRevisionAssetPlanner({
+      chatPort: makePort({
+        intents: [
+          {
+            action: 'replace',
+            layout: { fit: 'contain', height: 0.7, width: 0.4, x: 0.55, y: 0.2 },
+            prompt: 'A studio product photograph',
+            ref: imageHref,
+            size: '1024x1536',
+            slideId: 'product',
+            slotId: 'hero',
+          },
+        ],
+      }),
+      imageGenerationCapability: {
+        generate: vi.fn(async (scope: RuntimeScope, slots: readonly ImageGenerationSlot[]) => ({
+          jobId: 'job',
+          scope,
+          slots: slots.map((slot) => ({
+            assetRefs: [{ ref: 'product-new' }],
+            slideId: slot.slideId,
+            slotId: slot.slotId,
+            state: 'ready' as const,
+          })),
+        })),
+      },
+    });
+    const prepared = await assetPlanner.prepare({
+      basePlan,
+      jobId: 'job',
+      jobInput,
+      revision,
+      scope: mockScope,
+    });
+    const port = makePort({
+      planId: 'updated',
+      slides: [{ slideId: 'product', svg: slideSvg('Revised description') }],
+    });
+    const plan = await createGLMPresentationPlanner({ chatPort: port }).plan(prepared.input, {
+      basePlan,
+      revision,
+      scope: mockScope,
+    });
+    expect(plan.slides[0]).toEqual(basePlan.slides[0]);
+    expect(plan.slides[2]).toEqual(basePlan.slides[2]);
+    expect(plan.slides[1].slideId).toBe('product');
+    expect(plan.slides[1].svg).toContain('href="/api/runtime/presentation/artifacts/product-new"');
+    expect(plan.slides[1].svg).not.toContain('product-old');
+    expect(plan.slides[1].svg).toContain('x="528"');
+    expect(plan.slides[1].svg).toContain('width="384"');
+    expect(plan.slides[1].svg).toContain('Revised description');
+    expect(JSON.stringify(vi.mocked(port.chat).mock.calls[0][0])).toContain('1024x1536');
+  });
+
+  it('refuses silent image removal during a wording revision', async () => {
+    const port = makePort({ slides: [{ slideId: 'product', svg: slideSvg('Revised wording') }] });
+    await expect(
+      createGLMPresentationPlanner({ chatPort: port }).plan(jobInput, {
+        basePlan,
+        revision: { ...revision, content: 'Shorten the title only' },
+        scope: mockScope,
+      }),
+    ).rejects.toThrow('image that should be preserved');
+  });
+
+  it('retains existing asset associations, title and speaker notes through a text-only asset preparation and revision', async () => {
+    const original: PresentationPlan = {
+      ...basePlan,
+      slides: basePlan.slides.map((slide) =>
+        slide.slideId === 'product'
+          ? {
+              ...slide,
+              metadata: { generatedAssetRefs: ['product-old'], title: 'Original product title' },
+              notes: 'Remember to demonstrate the product.',
+            }
+          : slide,
+      ),
+    };
+    const textRevision = {
+      ...revision,
+      content: 'Shorten only the description; preserve the image and speaker notes.',
+    };
+    const assets = createRevisionAssetPlanner({ chatPort: makePort({ intents: [] }) });
+    const prepared = await assets.prepare({
+      basePlan: original,
+      jobId: 'job',
+      jobInput,
+      revision: textRevision,
+      scope: mockScope,
+    });
+    expect(prepared.input.options?.generatedImageSlots).toEqual([]);
+    const revisedSvg = original.slides[1].svg.replace('Product</text>', 'Short description</text>');
+    const port = makePort({
+      slides: [
+        {
+          metadata: { generatedAssetRefs: ['model-invented-image'] },
+          slideId: 'product',
+          svg: revisedSvg,
+        },
+      ],
+    });
+    const result = await createGLMPresentationPlanner({ chatPort: port }).plan(prepared.input, {
+      basePlan: original,
+      revision: textRevision,
+      scope: mockScope,
+    });
+    expect(result.slides[1]).toMatchObject({
+      metadata: { generatedAssetRefs: ['product-old'], title: 'Original product title' },
+      notes: 'Remember to demonstrate the product.',
+      svg: revisedSvg,
+    });
+    expect(result.slides[0]).toEqual(original.slides[0]);
+    expect(result.slides[2]).toEqual(original.slides[2]);
+  });
+
+  it('drops removed image associations and honors an explicit empty speaker note', async () => {
+    const original: PresentationPlan = {
+      ...basePlan,
+      slides: basePlan.slides.map((slide) =>
+        slide.slideId === 'product'
+          ? {
+              ...slide,
+              metadata: { generatedAssetRefs: ['product-old'], title: 'Original product title' },
+              notes: 'Notes to clear',
+            }
+          : slide,
+      ),
+    };
+    const assets = createRevisionAssetPlanner({
+      chatPort: makePort({
+        intents: [{ action: 'remove', ref: imageHref, slideId: 'product', slotId: 'hero' }],
+      }),
+    });
+    const prepared = await assets.prepare({
+      basePlan: original,
+      jobId: 'job',
+      jobInput,
+      revision,
+      scope: mockScope,
+    });
+    const port = makePort({
+      slides: [
+        {
+          metadata: { generatedAssetRefs: ['product-old', 'model-invented-image'] },
+          notes: '',
+          slideId: 'product',
+          svg: slideSvg('Only text now'),
+          title: 'New title',
+        },
+      ],
+    });
+    const result = await createGLMPresentationPlanner({ chatPort: port }).plan(prepared.input, {
+      basePlan: original,
+      revision,
+      scope: mockScope,
+    });
+    expect(result.slides[1]).toMatchObject({
+      metadata: { generatedAssetRefs: [], title: 'New title' },
+      notes: '',
+    });
+  });
+
+  it('refuses fabricated references and off-canvas placement', async () => {
+    const imageInput = {
+      ...jobInput,
+      options: {
+        generatedImageSlots: [
+          {
+            assetRefs: [{ ref: 'real-image' }],
+            slideId: 'slide-1',
+            slotId: 'hero',
+            state: 'ready',
+          },
+        ],
+      },
+      slideCount: 1,
+    };
+    await expect(
+      createGLMPresentationPlanner({
+        chatPort: makePort({
+          slides: [
+            {
+              slideId: 'slide-1',
+              svg: slideSvg('Title', '<image href="/made-up-image.png" width="400" height="300"/>'),
+            },
+          ],
+        }),
+      }).plan(imageInput, { scope: mockScope }),
+    ).rejects.toThrow('did not place');
+    await expect(
+      createGLMPresentationPlanner({
+        chatPort: makePort({
+          slides: [
+            {
+              slideId: 'slide-1',
+              svg: slideSvg(
+                'Title',
+                '<image href="/api/runtime/presentation/artifacts/real-image" x="900" width="400" height="300"/>',
+              ),
+            },
+          ],
+        }),
+      }).plan(imageInput, { scope: mockScope }),
+    ).rejects.toThrow('outside the slide');
+  });
+
+  it('passes learned geometry and capacity to the model rather than only a style name', async () => {
+    const template = {
+      ...extractPlanTemplate(basePlan),
+      name: 'Product template',
+      templateId: 'template',
+      versionId: 'version',
+    };
+    const port = makePort({
+      slides: basePlan.slides.map((slide) => ({ ...slide, svg: slideSvg('Current content') })),
+    });
+    await createGLMPresentationPlanner({ chatPort: port }).plan(jobInput, {
+      scope: mockScope,
+      template,
+    });
+    const prompt = JSON.stringify(vi.mocked(port.chat).mock.calls[0][0]);
+    expect(prompt).toContain('assetSlots');
+    expect(prompt).toContain('textCapacity');
+    expect(prompt).toContain('normalized positions');
+    expect(prompt).toContain('template');
+  });
+
+  it('shows the model scoped image bytes while ignoring untrusted client data references', async () => {
+    const base64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const port = makePort({
+      slides: [
+        {
+          slideId: 'slide-1',
+          svg: slideSvg(
+            'Product',
+            '<image href="/api/runtime/presentation/artifacts/new-photo" x="520" y="130" width="390" height="300"/>',
+          ),
+        },
+      ],
+    });
+    const prepared: PresentationJobInput = {
+      ...jobInput,
+      options: {
+        generatedImageSlots: [{ assetRefs: [{ ref: 'new-photo' }], slideId: 'slide-1' }],
+        references: [{ url: 'data:image/png;base64,untrusted-client-input' }],
+      },
+      slideCount: 1,
+    };
+    await createGLMPresentationPlanner({ chatPort: port }).plan(prepared, {
+      scope: mockScope,
+      trustedImages: [
+        { base64, mimeType: 'image/png', ref: 'new-photo' },
+        { base64: 'invalid-other-page-bytes', mimeType: 'image/png', ref: 'other-page-photo' },
+      ],
+    });
+    const [request, context] = vi.mocked(port.chat).mock.calls[0];
+    expect(JSON.stringify(request)).toContain(`data:image/png;base64,${base64}`);
+    expect(JSON.stringify(request)).not.toContain('untrusted-client-input');
+    expect(JSON.stringify(request)).not.toContain('invalid-other-page-bytes');
+    expect(context.trustedImages?.urls).toEqual([`data:image/png;base64,${base64}`]);
+  });
+
+  it('bounds the final text context for historical inline slides and embedded template image references', async () => {
+    const payload = 'A'.repeat(1_700_000);
+    const embedded = `data:image/png;base64,${payload}`;
+    const original: PresentationPlan = {
+      ...basePlan,
+      slides: basePlan.slides.map((slide) =>
+        slide.slideId === 'product'
+          ? {
+              ...slide,
+              svg: slideSvg(
+                'Product',
+                `<image href="${embedded}" x="520" y="130" width="390" height="300"/>`,
+              ),
+            }
+          : slide,
+      ),
+    };
+    const learned = extractPlanTemplate(basePlan);
+    const template = {
+      ...learned,
+      layouts: learned.layouts.map((layout) => ({
+        ...layout,
+        assetSlots: [
+          {
+            aspectRatio: 1,
+            box: { height: 0.5, width: 0.5, x: 0.4, y: 0.3 },
+            fit: 'contain' as const,
+            reference: embedded,
+            slotId: 'reference',
+          },
+        ],
+        referenceSvg: slideSvg(
+          'Reference title',
+          `<image href="data:image/png;base64,${'B'.repeat(12_000)}" width="400" height="300"/>`,
+        ),
+      })),
+      name: 'Historical image template',
+      templateId: 'template',
+      versionId: 'version',
+    };
+    const port = makePort({});
+    vi.mocked(port.chat).mockRejectedValueOnce(
+      new Error('Stop after capturing the bounded request'),
+    );
+    await expect(
+      createGLMPresentationPlanner({ chatPort: port }).plan(jobInput, {
+        basePlan: original,
+        revision,
+        scope: mockScope,
+        template,
+      }),
+    ).rejects.toThrow('Stop after capturing');
+    const request = vi.mocked(port.chat).mock.calls[0][0];
+    const text = JSON.stringify(request.messages);
+    expect(text.length).toBeLessThan(30_000);
+    expect(text).not.toContain('data:image');
+    expect(text).not.toContain('A'.repeat(256));
+    expect(text).not.toContain('B'.repeat(256));
+    expect(text).toContain('embedded image data omitted');
+    expect(original.slides[1].svg).toContain(embedded);
+  });
+
+  it('maps returned pages by their identities when the model reorders them', async () => {
+    const port = makePort({ slides: [...basePlan.slides].reverse() });
+    const updated = await createGLMPresentationPlanner({ chatPort: port }).plan(jobInput, {
+      basePlan,
+      revision: { ...revision, target: { type: 'deck' } },
+      scope: mockScope,
+    });
+    expect(updated.slides.map((slide) => slide.svg)).toEqual(
+      basePlan.slides.map((slide) => slide.svg),
+    );
+    const wrongPage = makePort({ slides: [{ slideId: 'outro', svg: slideSvg('Wrong page') }] });
+    await expect(
+      createGLMPresentationPlanner({ chatPort: wrongPage }).plan(jobInput, {
+        basePlan,
+        revision,
+        scope: mockScope,
+      }),
+    ).rejects.toThrow('retain each selected slide id');
+  });
+});
+
+it('publishes the first real draft before asking the model to compose the next page', async () => {
+  const events: string[] = [];
+  const chat: GLMMultimodalChatPort = {
+    providerId: 'test',
+    manifest: {
+      providerId: 'test',
+      model: 'test',
+      displayName: 'test',
+      supportsVision: true,
+      supportsIdempotency: true,
+    },
+    chat: vi.fn<GLMMultimodalChatPort['chat']>(async () => {
+      const page = events.filter((event) => event.startsWith('model')).length + 1;
+      events.push(`model-${page}`);
+      return {
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                planId: `plan-${page}`,
+                title: 'Deck',
+                slides: [
+                  {
+                    slideId: 'model-local-id',
+                    order: 1,
+                    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540"><text x="100" y="100">Page ${page}</text></svg>`,
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+        created: 1,
+        id: 'test',
+        model: 'test',
+      };
+    }),
+  };
+  const outline = [1, 2].map((page) => ({
+    id: `outline-${page}`,
+    title: `Title ${page}`,
+    objective: `Claim ${page}`,
+    keyPoints: [`Point ${page}`],
+  }));
+  const plan = await createGLMPresentationPlanner({ chatPort: chat }).plan(
+    {
+      notebookId: 'test',
+      sourceVersionIds: [],
+      title: 'Deck',
+      slideCount: 2,
+      options: { outline },
+    },
+    {
+      scope: mockScope,
+      onSlideDraft: async (slide: any) => {
+        events.push(`draft-${slide.slideId}`);
+        expect(slide.svg).toContain('Page');
+      },
+    },
+  );
+  expect(events).toEqual(['model-1', 'draft-slide-1', 'model-2', 'draft-slide-2']);
+  expect(plan.slides.map((page) => page.slideId)).toEqual(['slide-1', 'slide-2']);
+  expect(plan.slides[1].metadata).toMatchObject({ objective: 'Claim 2', outline: ['Point 2'] });
 });

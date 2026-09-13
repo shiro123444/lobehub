@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildPresentationImageSlots, PresentationAgentFlow } from './index';
+import { PresentationAgentFlow } from './index';
 import type { PresentationAgentClient } from './presentationAgentClient';
 
 const outlineSlides = (count: number, topic: string) =>
@@ -23,35 +23,14 @@ const readyClient = (
     brief,
     message: '信息已经足够，我来整理逐页大纲。',
     phase: 'outline' as const,
+    slides: outlineSlides(brief.slideCount ?? 3, brief.topic ?? '演示文稿'),
   })),
 });
 
 const rewriteOutline = vi.fn(async ({ allSlides }) => allSlides);
 
-describe('buildPresentationImageSlots', () => {
-  it('creates at most four page-bound prompts for the real image provider', () => {
-    const slots = buildPresentationImageSlots(
-      Array.from({ length: 12 }, (_, index) => ({
-        id: `outline-${index + 1}`,
-        keyPoints: [`要点 ${index + 1}`],
-        objective: `目标 ${index + 1}`,
-        title: index === 3 ? '核心数据与案例' : `第 ${index + 1} 页`,
-        visualSuggestion: '现代构图',
-      })),
-      '人工智能前沿',
-      '高校师生',
-      '学术简约',
-    );
-
-    expect(slots).toHaveLength(4);
-    expect(slots[0]).toMatchObject({ slideId: 'slide-1', slotId: 'hero-visual' });
-    expect(slots[0].prompt).toContain('人工智能前沿');
-    expect(slots.map(({ slideId }) => slideId)).toContain('slide-4');
-  });
-});
-
 describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
-  it('renders Cordis thinking state and delegates outline generation after a real agent turn', async () => {
+  it('renders the agent-produced outline without triggering a fixed frontend outline call', async () => {
     let resolveTurn!: (value: Awaited<ReturnType<PresentationAgentClient['turn']>>) => void;
     const turnPromise = new Promise((resolve) => {
       resolveTurn = resolve;
@@ -86,6 +65,10 @@ describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
       expect.objectContaining({
         messages: [expect.objectContaining({ content: '年度经营计划', role: 'user' })],
       }),
+      expect.objectContaining({
+        onActivity: expect.any(Function),
+        signal: expect.any(AbortSignal),
+      }),
     );
 
     await act(async () => {
@@ -93,13 +76,20 @@ describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
         brief: { audience: '管理层', slideCount: 8, topic: '年度经营计划' },
         message: '信息已经足够，我来整理逐页大纲。',
         phase: 'outline',
+        slides: [
+          {
+            id: 'slide-1',
+            keyPoints: ['关键判断'],
+            title: 'AI 生成的决策大纲',
+            objective: '支持管理层决策',
+            visualSuggestion: '趋势图',
+          },
+        ],
       });
     });
 
-    expect(await screen.findByDisplayValue('AI 生成的决策大纲')).toBeInTheDocument();
-    expect(client.outline).toHaveBeenCalledWith({
-      brief: { audience: '管理层', slideCount: 8, topic: '年度经营计划' },
-    });
+    expect(await screen.findByText('AI 生成的决策大纲')).toBeInTheDocument();
+    expect(client.outline).not.toHaveBeenCalled();
     expect(onOutlineAiRewrite).not.toHaveBeenCalled();
   });
 
@@ -151,7 +141,7 @@ describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
 
     // User message for topic is shown
     await waitFor(() => {
-      expect(screen.getByText('2026年企业数字化转型战略规划')).toBeInTheDocument();
+      expect(screen.getAllByText('2026年企业数字化转型战略规划').length).toBeGreaterThan(0);
     });
 
     // The capability result opens the editable outline directly; no fixed
@@ -160,35 +150,16 @@ describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
       expect(screen.getByTestId('presentation-agent-outline')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('audience-options-group')).not.toBeInTheDocument();
-    expect(screen.getByDisplayValue('2026年企业数字化转型战略规划')).toBeInTheDocument();
+    expect(screen.getAllByText('2026年企业数字化转型战略规划').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /确认大纲，继续生成/ }));
-
-    // User confirmation is the only transition from outline to generation.
-    await waitFor(() => {
-      expect(screen.getByTestId('presentation-agent-summary')).toBeInTheDocument();
-    });
-    expect(screen.getAllByText('2026年企业数字化转型战略规划').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('行业演讲')).toBeInTheDocument();
-    expect(screen.getByText('12 页')).toBeInTheDocument();
-    expect(screen.getByText(/科技极简 · 16:9 · 中文/)).toBeInTheDocument();
-
-    // Click submit button
-    const submitBtn = screen.getByRole('button', { name: /Start presentation generation/i });
-    expect(submitBtn).toBeInTheDocument();
-    fireEvent.click(submitBtn);
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         aspectRatio: '16:9',
         language: 'zh-CN',
         options: expect.objectContaining({
-          imageSlots: expect.arrayContaining([
-            expect.objectContaining({
-              prompt: expect.stringContaining('2026年企业数字化转型战略规划'),
-              slideId: 'slide-1',
-              slotId: 'hero-visual',
-            }),
-          ]),
+          audience: '行业演讲',
+          style: '科技极简',
         }),
         prompt: expect.stringContaining('2026年企业数字化转型战略规划'),
         slideCount: 12,
@@ -196,7 +167,8 @@ describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
       }),
     );
     const submitted = onCreate.mock.calls[0][0];
-    expect(submitted.options.imageSlots).toHaveLength(3);
+    // Asset decisions belong to the server's generated page plan.
+    expect(submitted.options).not.toHaveProperty('imageSlots');
   }, 60000);
 
   it('forwards the notebook context required by the runtime contract', async () => {
@@ -220,11 +192,6 @@ describe('PresentationAgentFlow (A-1 / A-2 / A-3)', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: /确认大纲，继续生成/ }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('presentation-agent-summary')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Start presentation generation/i }));
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({

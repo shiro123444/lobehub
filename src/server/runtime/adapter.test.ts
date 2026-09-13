@@ -63,11 +63,16 @@ describe('RuntimeHttpAdapter', () => {
     expect(handle.mock.calls.map(([request]) => request.command)).toEqual(commands);
   });
 
-  it('routes plugin.list, plugin.mount, and plugin.unmount', async () => {
+  it('routes plugin.list, plugin.mount, plugin.unmount, and plugin.reload', async () => {
     const { facade, handle } = createFacade();
     const adapter = new RuntimeHttpAdapter(facade);
 
-    for (const [index, command] of ['plugin.list', 'plugin.mount', 'plugin.unmount'].entries()) {
+    for (const [index, command] of [
+      'plugin.list',
+      'plugin.mount',
+      'plugin.unmount',
+      'plugin.reload',
+    ].entries()) {
       await expect(
         adapter.handle(envelope(`plugin-${index}`, command, { id: 'builtin' })),
       ).resolves.toMatchObject({ status: 200 });
@@ -77,6 +82,7 @@ describe('RuntimeHttpAdapter', () => {
       'plugin.list',
       'plugin.mount',
       'plugin.unmount',
+      'plugin.reload',
     ]);
   });
 

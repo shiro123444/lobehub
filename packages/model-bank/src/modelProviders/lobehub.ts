@@ -3,11 +3,11 @@ import type { ModelProviderCard } from '@/types/llm';
 const LobeHub: ModelProviderCard = {
   chatModels: [],
   description:
-    'Nexus Cloud uses official APIs to access AI models and measures usage with Credits tied to model tokens.',
+    'Qingzhou Cloud uses official APIs to access AI models and measures usage with Credits tied to model tokens.',
   enabled: true,
   id: 'lobehub',
   modelsUrl: 'https://lobehub.com/zh/docs/usage/subscription/model-pricing',
-  name: 'LobeHub',
+  name: 'Qingzhou',
   settings: {
     modelEditable: false,
     showAddNewModel: false,

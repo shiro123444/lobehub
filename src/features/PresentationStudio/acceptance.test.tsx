@@ -22,6 +22,9 @@ const readStyleSource = (relative: string): string =>
 
 const FIXTURE = 'src/features/PresentationStudio';
 
+// Intake conversation has its own suite; these cases exercise the job lifecycle.
+vi.mock('./AgentFlow', () => ({ default: () => null }));
+
 // C-112 persists the active job and stream cursor in sessionStorage so a
 // route re-entry can resume work. Keep acceptance cases isolated from one
 // another; each case owns its persistence scenario explicitly.
@@ -67,13 +70,13 @@ describe('PresentationStudio acceptance (C-58 phase 1)', () => {
 
     await waitFor(
       () => {
-        expect(screen.getByRole('status')).toHaveTextContent('Completed');
+        expect(screen.getByTestId('presentation-completed-tag')).toHaveTextContent('已完成');
       },
       { timeout: 8000 },
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Export presentation artifact/i }));
-    const menuItem = await screen.findByText('Export PowerPoint (.pptx)');
+    const menuItem = await screen.findByText('Export 矢量切片 (.svg)');
     fireEvent.click(menuItem.closest('li') ?? menuItem);
 
     await waitFor(() => {
@@ -120,25 +123,25 @@ describe('PresentationStudio acceptance (C-58 phase 1)', () => {
 
     // queued
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Job queued');
+      expect(screen.getByTestId('presentation-generation-workspace')).toBeInTheDocument();
     });
 
     demoTime += 150;
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Generating slides');
+      expect(screen.getByTestId('presentation-conversation')).toBeInTheDocument();
     });
 
     // completed + artifacts discovered via polling
     demoTime += 150;
     await waitFor(
       () => {
-        expect(screen.getByRole('status')).toHaveTextContent('Completed');
+        expect(screen.getByTestId('presentation-completed-tag')).toHaveTextContent('已完成');
       },
       { timeout: 8000 },
     );
     await waitFor(
       () => {
-        expect(screen.getByTestId('artifact-panel-list')).toBeInTheDocument();
+        expect(screen.getByTestId('presentation-completed-workspace')).toBeInTheDocument();
         expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(3);
       },
       { timeout: 8000 },
@@ -151,7 +154,7 @@ describe('PresentationStudio acceptance (C-58 phase 1)', () => {
 
     // export is enabled for a completed job with a ready artifact
     fireEvent.click(screen.getByRole('button', { name: /Export presentation artifact/i }));
-    const menuItem = await screen.findByText('Export PowerPoint (.pptx)');
+    const menuItem = await screen.findByText('Export 矢量切片 (.svg)');
     fireEvent.click(menuItem.closest('li') ?? menuItem);
 
     await waitFor(() => {

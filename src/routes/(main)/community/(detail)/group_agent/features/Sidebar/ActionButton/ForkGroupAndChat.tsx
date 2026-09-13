@@ -102,7 +102,7 @@ const ForkGroupAndChat = memo<{ mobile?: boolean }>(() => {
         );
       }
 
-      // Step 3: Prepare local group config owned by the current Nexus user.
+      // Step 3: Prepare local group config owned by the current Qingzhou user.
       const groupConfig = {
         config: {
           ...config,

@@ -20,18 +20,27 @@ export class Context implements RuntimeContext {
   public readonly fiber: Fiber;
   public readonly events: EventBus;
   public readonly scope?: ScopeKey;
+  public isStaging: boolean;
 
   private readonly services: Map<string, ServiceRecord>;
+  private readonly scopedServices: Map<ScopeKey, Map<string, ServiceRecord>>;
+  private readonly stagedServices?: Map<string, ServiceRecord>;
   private readonly fibers: Set<Fiber>;
   private readonly pendingFibers: Set<Fiber>;
   private pendingRequested = false;
   private pendingFlush?: Promise<void>;
 
-  constructor(root?: Context, fiber?: Fiber, scope?: ScopeKey) {
+  constructor(root?: Context, fiber?: Fiber, scope?: ScopeKey, isStaging = false) {
+    this.isStaging = isStaging;
+    if (this.isStaging) {
+      this.stagedServices = new Map();
+    }
+
     if (root) {
       this.root = root.root;
       this.events = this.root.events;
       this.services = this.root.services;
+      this.scopedServices = this.root.scopedServices;
       this.fibers = this.root.fibers;
       this.pendingFibers = this.root.pendingFibers;
       this.fiber = fiber!;
@@ -42,6 +51,7 @@ export class Context implements RuntimeContext {
     this.root = this;
     this.events = new EventBus();
     this.services = new Map();
+    this.scopedServices = new Map();
     this.fibers = new Set();
     this.pendingFibers = new Set();
 
@@ -51,11 +61,12 @@ export class Context implements RuntimeContext {
     this.fibers.add(activeRootFiber);
   }
 
-  async plugin(plugin: RuntimePluginManifest, config?: unknown): Promise<Fiber> {
+  async plugin(plugin: RuntimePluginManifest, config?: unknown, isStaging = false): Promise<Fiber> {
     this.fiber.assertMountable();
 
+    const staging = isStaging || this.isStaging;
     const fiber = new Fiber(plugin.id, plugin, config, this.fiber);
-    const childContext = new Context(this.root, fiber, this.scope);
+    const childContext = new Context(this.root, fiber, this.scope, staging);
     fiber.attachContext(childContext);
     this.fiber.addChild(fiber);
     this.root.fibers.add(fiber);
@@ -66,13 +77,25 @@ export class Context implements RuntimeContext {
 
   provide<T>(name: string, service: T): Disposable {
     this.fiber.assertMountable();
-    const root = this.root;
     const record: ServiceRecord = { value: service, provider: this.fiber };
-    root.services.set(name, record);
+
+    if (this.isStaging && this.stagedServices) {
+      this.stagedServices.set(name, record);
+      const remove = () => {
+        if (this.stagedServices?.get(name) === record) {
+          this.stagedServices.delete(name);
+        }
+      };
+      return this.fiber.collect(remove);
+    }
+
+    const root = this.root;
+    const services = this.serviceTable();
+    services.set(name, record);
 
     const remove = () => {
-      if (root.services.get(name) !== record) return;
-      root.services.delete(name);
+      if (services.get(name) !== record) return;
+      services.delete(name);
       root._schedulePending();
     };
 
@@ -81,16 +104,88 @@ export class Context implements RuntimeContext {
     return disposer;
   }
 
+  commitStaged(): void {
+    if (this.stagedServices) {
+      const root = this.root;
+      const services = this.serviceTable();
+      for (const [name, record] of this.stagedServices) {
+        services.set(name, record);
+        const remove = () => {
+          if (services.get(name) !== record) return;
+          services.delete(name);
+          root._schedulePending();
+        };
+        this.fiber.collect(remove);
+      }
+      this.stagedServices.clear();
+    }
+    this.isStaging = false;
+    for (const child of this.fiber.getChildren()) {
+      try {
+        child.ctx.commitStaged();
+      } catch {
+        // ignore
+      }
+    }
+    this.root._schedulePending();
+  }
+
+  discardStaged(): void {
+    if (this.stagedServices) {
+      this.stagedServices.clear();
+    }
+    this.isStaging = false;
+    for (const child of this.fiber.getChildren()) {
+      try {
+        child.ctx.discardStaged();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   get<T>(name: string): T | undefined {
-    return this.root.services.get(name)?.value as T | undefined;
+    if (this.isStaging && this.stagedServices?.has(name)) {
+      return this.stagedServices.get(name)?.value as T | undefined;
+    }
+    return this.lookup(name)?.value as T | undefined;
   }
 
   has(name: string): boolean {
-    return this.root.services.has(name);
+    if (this.isStaging && this.stagedServices?.has(name)) return true;
+    return this.lookup(name) !== undefined;
+  }
+
+  private serviceTable(): Map<string, ServiceRecord> {
+    if (this.scope === undefined) return this.root.services;
+    let services = this.root.scopedServices.get(this.scope);
+    if (!services) {
+      services = new Map();
+      this.root.scopedServices.set(this.scope, services);
+    }
+    return services;
+  }
+
+  private lookup(name: string): ServiceRecord | undefined {
+    return (
+      (this.scope === undefined
+        ? undefined
+        : this.root.scopedServices.get(this.scope)?.get(name)) ?? this.root.services.get(name)
+    );
+  }
+
+  async _disposeDependents(provider: Fiber): Promise<void> {
+    for (const consumer of [...this.root.fibers].reverse()) {
+      if (consumer === provider || consumer.state === 'unloading' || consumer.state === 'disposed')
+        continue;
+      if (consumer.inject.some((name) => consumer.ctx.lookup(name)?.provider === provider)) {
+        await consumer.dispose();
+      }
+    }
   }
 
   withScope(scope: ScopeKey): Context {
-    return new Context(this.root, this.fiber, scope);
+    return new Context(this.root, this.fiber, scope, this.isStaging);
   }
 
   on(event: string, listener: Listener): Disposable {
@@ -119,9 +214,8 @@ export class Context implements RuntimeContext {
   }
 
   _dependenciesReady(fiber: Fiber): boolean {
-    const root = this.root;
     return fiber.inject.every((name) => {
-      const record = root.services.get(name);
+      const record = fiber.ctx.lookup(name);
       return record !== undefined && record.provider.state === 'active';
     });
   }

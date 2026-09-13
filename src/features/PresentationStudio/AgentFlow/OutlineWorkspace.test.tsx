@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import OutlineWorkspace, { type OutlineSlide } from './OutlineWorkspace';
@@ -6,171 +6,68 @@ import OutlineWorkspace, { type OutlineSlide } from './OutlineWorkspace';
 const providerSlides = (): OutlineSlide[] =>
   Array.from({ length: 4 }, (_, index) => ({
     id: `slide-${index + 1}`,
-    keyPoints: [`要点 ${index + 1}.1`, `要点 ${index + 1}.2`, `要点 ${index + 1}.3`],
-    objective: `目标 ${index + 1}`,
-    speakerNotes: `备注 ${index + 1}`,
     title: index === 0 ? '智能新零售' : `章节 ${index + 1}`,
+    keyPoints: [`要点 ${index + 1}.1`, `要点 ${index + 1}.2`],
+    objective: `目标 ${index + 1}`,
+    claim: `结论 ${index + 1}`,
+    speakerNotes: `备注 ${index + 1}`,
     visualSuggestion: `视觉 ${index + 1}`,
   }));
+const setup = (onAiRewrite = vi.fn(async () => undefined) as any) => {
+  const onConfirm = vi.fn();
+  const onBack = vi.fn();
+  render(
+    <OutlineWorkspace
+      initialSlides={providerSlides()}
+      onAiRewrite={onAiRewrite}
+      onBack={onBack}
+      onConfirm={onConfirm}
+    />,
+  );
+  return { onConfirm, onBack, onAiRewrite };
+};
 
-const noRewrite = vi.fn(async () => undefined);
-
-describe('OutlineWorkspace (A-5 / C-107)', () => {
-  it('renders provider slides verbatim without automatically requesting a rewrite', () => {
-    const onAiRewrite = vi.fn(async () => undefined);
-    render(
-      <OutlineWorkspace
-        initialSlides={providerSlides()}
-        onAiRewrite={onAiRewrite}
-        onBack={vi.fn()}
-        onConfirm={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByDisplayValue('智能新零售')).toBeInTheDocument();
-    expect(screen.getByText(/共 4 页 · 版本 v1/)).toBeInTheDocument();
+describe('Outline storyboard', () => {
+  it('shows only titles and conclusions until a page is opened, without an automatic rewrite', () => {
+    const { onAiRewrite } = setup();
+    const overview = within(screen.getByTestId('outline-overview'));
+    expect(overview.getAllByRole('button')).toHaveLength(4);
+    expect(overview.getByText('智能新零售')).toBeInTheDocument();
+    expect(overview.getByText('结论 1')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('要点 1.1')).not.toBeInTheDocument();
     expect(onAiRewrite).not.toHaveBeenCalled();
-  }, 60000);
-
-  it('renders all slide cards and supports editing titles and points', () => {
-    const onConfirm = vi.fn();
-    const onBack = vi.fn();
-
-    render(
-      <OutlineWorkspace
-        initialSlides={providerSlides()}
-        onAiRewrite={noRewrite}
-        onBack={onBack}
-        onConfirm={onConfirm}
-      />,
-    );
-
-    expect(screen.getByTestId('presentation-agent-outline')).toBeInTheDocument();
-    expect(screen.getByText(/共 4 页 · 版本 v1/)).toBeInTheDocument();
-
-    // Edit slide title
-    const firstTitleInput = screen.getByLabelText('第 1 页标题');
-    fireEvent.change(firstTitleInput, { target: { value: '封面：智能新零售数字化全景' } });
-    expect(firstTitleInput).toHaveValue('封面：智能新零售数字化全景');
-    expect(screen.getByText(/版本 v2/)).toBeInTheDocument();
-
-    // Edit key point
-    const firstPointInput = screen.getByLabelText('第 1 页要点 1');
-    fireEvent.change(firstPointInput, { target: { value: '重点聚焦智能供应链与门店协同' } });
-    expect(firstPointInput).toHaveValue('重点聚焦智能供应链与门店协同');
-
-    // Add point
-    const addPointButton = screen.getByRole('button', { name: '为第 1 页添加要点' });
-    fireEvent.click(addPointButton);
-    expect(screen.getByLabelText('第 1 页要点 4')).toBeInTheDocument();
-
-    // Delete point
-    const deletePointButton = screen.getByRole('button', { name: '删除第 1 页要点 4' });
-    fireEvent.click(deletePointButton);
-    expect(screen.queryByLabelText('第 1 页要点 4')).not.toBeInTheDocument();
-  }, 60000);
-
-  it('supports moving, duplicating, adding, and deleting slides', () => {
-    const onConfirm = vi.fn();
-    const onBack = vi.fn();
-
-    render(
-      <OutlineWorkspace
-        initialSlides={providerSlides()}
-        onAiRewrite={noRewrite}
-        onBack={onBack}
-        onConfirm={onConfirm}
-      />,
-    );
-
-    // Duplicate slide 1
-    const duplicateButton = screen.getByRole('button', { name: '复制第 1 页' });
-    fireEvent.click(duplicateButton);
-    expect(screen.getByText(/共 5 页/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/智能新零售 \(副本\)/)).toBeInTheDocument();
-
-    // Add new slide
-    const addSlideButton = screen.getByRole('button', { name: '添加页面' });
-    fireEvent.click(addSlideButton);
-    expect(screen.getByText(/共 6 页/)).toBeInTheDocument();
-
-    // Delete slide 2
-    const deleteButton = screen.getByRole('button', { name: '删除第 2 页' });
-    fireEvent.click(deleteButton);
-    expect(screen.getByText(/共 5 页/)).toBeInTheDocument();
-
-    // Move slide down
-    const moveDownButton = screen.getByRole('button', { name: '下移第 1 页' });
-    fireEvent.click(moveDownButton);
-
-    // Move slide up
-    const moveUpButton = screen.getByRole('button', { name: '上移第 2 页' });
-    fireEvent.click(moveUpButton);
-  }, 60000);
-
-  it('delegates single-slide and overall AI rewriting to the server callback', async () => {
-    const onConfirm = vi.fn();
-    const onBack = vi.fn();
-    const onAiRewrite = vi.fn(async ({ mode }: { mode: 'all' | 'slide' }) =>
-      mode === 'slide'
-        ? { title: '服务端单页优化结果' }
-        : providerSlides().map((slide, index) => ({
-            ...slide,
-            title: `服务端整体优化 ${index + 1}`,
-          })),
-    );
-
-    render(
-      <OutlineWorkspace
-        initialSlides={providerSlides()}
-        onAiRewrite={onAiRewrite}
-        onBack={onBack}
-        onConfirm={onConfirm}
-      />,
-    );
-
-    // AI rewrite slide 1
-    const aiRewriteButton = screen.getByRole('button', { name: '优化第 1 页' });
-    fireEvent.click(aiRewriteButton);
-    expect(await screen.findByDisplayValue('服务端单页优化结果')).toBeInTheDocument();
-
-    // AI optimize all
-    const aiOptimizeAllButton = screen.getByRole('button', { name: 'AI 整体优化' });
-    fireEvent.click(aiOptimizeAllButton);
-    await waitFor(() => expect(screen.getByDisplayValue('服务端整体优化 1')).toBeInTheDocument());
-    expect(screen.getByText(/版本 v3/)).toBeInTheDocument();
-    expect(onAiRewrite).toHaveBeenCalledTimes(2);
-  }, 60000);
-
-  it('submits confirmed outline on confirmation and triggers back', () => {
-    const onConfirm = vi.fn();
-    const onBack = vi.fn();
-
-    render(
-      <OutlineWorkspace
-        initialSlides={providerSlides()}
-        onAiRewrite={noRewrite}
-        onBack={onBack}
-        onConfirm={onConfirm}
-      />,
-    );
-
-    // Confirm
-    const confirmButton = screen.getByRole('button', { name: '确认大纲，继续生成' });
-    fireEvent.click(confirmButton);
-
-    expect(onConfirm).toHaveBeenCalledWith({
-      slides: expect.arrayContaining([
-        expect.objectContaining({
-          title: '智能新零售',
-        }),
-      ]),
-      versionId: 'v1',
+    fireEvent.click(overview.getByRole('button', { name: '第 1 页 · 智能新零售' }));
+    expect(screen.getByLabelText('第 1 页标题')).toHaveValue('智能新零售');
+    expect(screen.getByLabelText('第 1 页要点 1')).toHaveValue('要点 1.1');
+    expect(screen.queryByLabelText('第 2 页标题')).not.toBeInTheDocument();
+  });
+  it('preserves page content and selection when editing and reordering, then confirms directly', () => {
+    const { onConfirm } = setup();
+    fireEvent.click(screen.getByTestId('outline-slide-1'));
+    fireEvent.change(screen.getByLabelText('第 1 页标题'), { target: { value: '新标题' } });
+    fireEvent.change(screen.getByLabelText('第 1 页要点 1'), { target: { value: '新要点' } });
+    fireEvent.click(screen.getByRole('button', { name: '下移第 1 页' }));
+    expect(screen.getByLabelText('第 2 页标题')).toHaveValue('新标题');
+    fireEvent.click(screen.getByRole('button', { name: /close|关闭/i }));
+    fireEvent.click(screen.getByRole('button', { name: '确认大纲，继续生成' }));
+    expect(onConfirm.mock.calls[0][0].slides[1]).toEqual({
+      ...providerSlides()[0],
+      title: '新标题',
+      keyPoints: ['新要点', '要点 1.2'],
     });
-
-    // Back
-    const backButton = screen.getByRole('button', { name: '返回对话' });
-    fireEvent.click(backButton);
-    expect(onBack).toHaveBeenCalled();
-  }, 60000);
+    expect(onConfirm.mock.calls[0][0].slides[0]).toEqual(providerSlides()[1]);
+  });
+  it('delegates single-page editing and keeps the remaining pages intact', async () => {
+    const rewrite = vi.fn(async () => ({ title: '服务端单页优化结果' }));
+    const { onConfirm } = setup(rewrite);
+    fireEvent.click(screen.getByTestId('outline-slide-1'));
+    fireEvent.click(screen.getByRole('button', { name: '优化第 1 页' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('第 1 页标题')).toHaveValue('服务端单页优化结果'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /close|关闭/i }));
+    fireEvent.click(screen.getByRole('button', { name: '确认大纲，继续生成' }));
+    expect(rewrite).toHaveBeenCalledOnce();
+    expect(onConfirm.mock.calls[0][0].slides.slice(1)).toEqual(providerSlides().slice(1));
+  });
 });

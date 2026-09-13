@@ -12,7 +12,7 @@ const KEY_PREFIX = 'messenger:slack-oauth-state:';
 const stateKey = (state: string): string => `${KEY_PREFIX}${state}`;
 
 export interface OAuthStatePayload {
-  /** LobeHub user who clicked "Connect Slack". Persisted on the install row. */
+  /** Qingzhou user who clicked "Connect Slack". Persisted on the install row. */
   lobeUserId: string;
   /** Where to send the user after the callback finishes (relative path). */
   returnTo?: string;
@@ -21,7 +21,7 @@ export interface OAuthStatePayload {
 }
 
 /**
- * Issue a single-use OAuth state token bound to the LobeHub user who
+ * Issue a single-use OAuth state token bound to the Qingzhou user who
  * initiated the install. Returns the opaque `state` string the caller passes
  * to Slack's authorize URL — Slack echoes it back in the callback.
  *

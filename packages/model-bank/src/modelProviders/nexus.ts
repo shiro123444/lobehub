@@ -88,14 +88,14 @@ const Nexus: ModelProviderCard = {
     },
   ],
   checkModel: 'gpt-5.4-mini',
-  description: 'NEXUS OpenAI-compatible gateway for chat and native image generation.',
+  description: 'Qingzhou OpenAI-compatible gateway for chat and native image generation.',
   enabled: true,
   id: 'nexus',
-  name: 'NEXUS',
+  name: 'Qingzhou',
   settings: {
     disableBrowserRequest: true,
     proxyUrl: {
-      desc: '填写 OpenAI 兼容的图像生成服务地址。留空时使用 NEXUS 默认服务。',
+      desc: '填写 OpenAI 兼容的图像生成服务地址。留空时使用清舟默认服务。',
       placeholder: 'https://app.soruxgpt.com/api/codex/v1',
       title: 'Base URL',
     },

@@ -12,6 +12,26 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
 
     background: ${cssVar.colorBgContainer};
 
+    &[data-compact='true'] {
+      gap: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+
+      [role='option'] {
+        gap: 4px;
+        padding: 4px;
+        border-radius: 8px;
+        background: transparent;
+      }
+
+      [role='option'] > div:last-child {
+        justify-content: center;
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       transition: none !important;
       animation: none !important;
@@ -19,36 +39,19 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
   empty: css`
     padding-block: 24px;
-
     font-size: 12px;
     color: ${cssVar.colorTextDescription};
     text-align: center;
   `,
   grid: css`
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
-
     outline: none;
 
     &:focus-visible {
       outline: 2px solid ${cssVar.colorPrimary};
       outline-offset: 4px;
-    }
-
-    @media (width <= 768px) {
-      display: flex;
-      gap: 10px;
-      overflow-x: auto;
-
-      padding-block-end: 4px;
-
-      scroll-snap-type: x proximity;
-
-      & > * {
-        min-width: 110px;
-        scroll-snap-align: start;
-      }
     }
   `,
   thumb: css`
@@ -105,13 +108,13 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
 
     font-size: 10px;
     color: ${cssVar.colorTextDescription};
+
     background: ${cssVar.colorFill};
   `,
   thumbFrame: css`
     overflow: hidden;
     aspect-ratio: 16 / 9;
     border-radius: ${cssVar.borderRadiusXS};
-
     background: ${cssVar.colorBgLayout};
   `,
   thumbImage: css`
@@ -126,8 +129,8 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     align-items: center;
     justify-content: space-between;
 
-    padding-inline: 2px;
     padding-block-end: 2px;
+    padding-inline: 2px;
 
     font-size: 11px;
     color: ${cssVar.colorTextDescription};
@@ -135,9 +138,8 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
   thumbStatus: css`
     font-size: 10px;
     font-weight: 600;
-    text-transform: uppercase;
-
     color: ${cssVar.colorTextDescription};
+    text-transform: uppercase;
   `,
   title: css`
     font-size: 13px;

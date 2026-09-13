@@ -10,7 +10,7 @@ const log = createDebug('lobe-image:nexus');
 const DEFAULT_BASE_URL = 'https://app.soruxgpt.com/api/codex/v1';
 const RESPONSE_MODEL = 'gpt-5.4-mini';
 const RETRYABLE_STATUS = new Set([408, 502, 503, 504]);
-const RESPONSES_NO_IMAGE_ERROR = 'NEXUS Responses API returned no image';
+const RESPONSES_NO_IMAGE_ERROR = 'Qingzhou Responses API returned no image';
 const IMAGE_B64_KEYS = new Set(['b64_json', 'image_b64', 'partial_image_b64']);
 const IMAGE_OUTPUT_TYPES = new Set(['image_generation_call']);
 
@@ -51,7 +51,9 @@ const toImageUrl = (value: string, mimeType = 'image/png') => {
 };
 
 const resolveSize = (params: CreateImagePayload['params']) => {
-  const size = String((params as any).size || '').trim().toLowerCase();
+  const size = String((params as any).size || '')
+    .trim()
+    .toLowerCase();
   if (size && size !== 'auto') return size;
 
   if (params.width && params.height) return `${params.width}x${params.height}`;
@@ -125,7 +127,7 @@ const extractErrorMessage = async (response: Response) => {
     }
   }
 
-  return `NEXUS image API returned HTTP ${response.status}`;
+  return `Qingzhou image API returned HTTP ${response.status}`;
 };
 
 const createResponsesStreamState = (): ResponsesStreamState => ({
@@ -149,13 +151,13 @@ const finalizeResponsesStreamResult = (state: ResponsesStreamState): ResponsesSt
   if (imageB64) return { imageB64 };
   if (state.error) return { error: state.error };
   if (state.sawImageGenerationEvent) {
-    return { error: 'NEXUS Responses API image_generation call completed without an image' };
+    return { error: 'Qingzhou Responses API image_generation call completed without an image' };
   }
 
   const text = state.textSnippets.join('').trim();
   if (text) {
     return {
-      error: `NEXUS Responses API did not call image_generation; upstream returned text: ${text}`,
+      error: `Qingzhou Responses API did not call image_generation; upstream returned text: ${text}`,
     };
   }
 
@@ -223,10 +225,7 @@ const parseResponsesStreamLine = (line: string, state: ResponsesStreamState) => 
     if (event.type === 'response.completed') {
       collectImageValues(event.response, state.completedB64s);
       const output = event.response?.output;
-      if (
-        Array.isArray(output) &&
-        output.some((item) => item?.type === 'image_generation_call')
-      ) {
+      if (Array.isArray(output) && output.some((item) => item?.type === 'image_generation_call')) {
         state.sawImageGenerationEvent = true;
       }
       return;
@@ -296,12 +295,12 @@ const callResponsesImageGeneration = async (
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      log('Calling NEXUS Responses image API: %s attempt=%d', endpoint, attempt + 1);
+      log('Calling Qingzhou Responses image API: %s attempt=%d', endpoint, attempt + 1);
 
       const response = await fetch(endpoint, {
         body: JSON.stringify(requestBody),
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         method: 'POST',
@@ -338,12 +337,12 @@ const callImagesGeneration = async (
   const { model, params } = payload;
   const endpoint = joinUrl(baseURL, '/images/generations');
   const maxAttempts = responseFormat === 'url' ? 2 : 1;
-  let lastError = 'NEXUS Images API returned no image';
+  let lastError = 'Qingzhou Images API returned no image';
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       log(
-        'Calling NEXUS Images API: %s format=%s attempt=%d',
+        'Calling Qingzhou Images API: %s format=%s attempt=%d',
         endpoint,
         responseFormat,
         attempt + 1,
@@ -358,7 +357,7 @@ const callImagesGeneration = async (
           size: resolveSize(params),
         }),
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         method: 'POST',

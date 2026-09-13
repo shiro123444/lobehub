@@ -154,8 +154,8 @@ docs/superpowers/
 
 # Local Scratch & Agent Cli artifacts
 scratch/
+.data/presentation/
 .antigravity/
 .antigravitycli/
 image-*.png
 *.png
-

@@ -21,7 +21,6 @@
  *   `PRESENTATION_RUNNER_NOT_ALLOWED` codes. Nothing is ever fabricated to
  *   `ready`/`completed`.
  */
-
 import type {
   PresentationArgsBuilder,
   PresentationBinaryPort,
@@ -33,11 +32,14 @@ import {
   PptMasterAdapter,
   PresentationError,
 } from '../../../../packages/cordis-kernel/src/presentation';
-import type { PresentationPlanner } from '../../../../packages/runtime-contracts/src';
+import type { PresentationPlanner, RuntimeScope } from '../../../../packages/runtime-contracts/src';
+import type { AtomicRuntime } from '../atomic-runtime';
+import { runSkillSteps } from '../skills-plugin';
 import {
   InMemoryPresentationArtifactStore,
   type PresentationArtifactStore,
 } from './artifact-store';
+import { atomicPlanner, atomicWorker, createPresentationAtomicRuntime } from './atomic-plugin';
 import {
   createPresentationRuntimeComposition,
   type PresentationGenerationContextFactory,
@@ -47,6 +49,7 @@ import type {
   PresentationJobEventJournalLoader,
   ScopedPresentationJobEventJournalCache,
 } from './event-journal-cache';
+import type { PresentationJobRepository } from './file-storage';
 import { createPresentationGenerationCapability } from './generation-capability';
 import type { ImageGenerationCapability } from './image-generation-capability';
 import { PresentationJobEventJournal } from './job-event-journal';
@@ -64,7 +67,10 @@ import {
 } from './production-command';
 import type { ProductionPresentationEnv } from './production-config';
 import { loadProductionPresentationProviderOptions } from './production-config';
+import { createRevisionAssetPlanner } from './revision-assets';
 import { createProcessPresentationRunner, type ProcessPresentationRunnerOptions } from './runner';
+import type { FilePresentationTemplateLibrary } from './templates';
+import { TemplateVisualLearning } from './templates/visual-learning';
 import { InMemoryPresentationPlanWorker, type PresentationWorkerWorkspace } from './worker';
 
 /** The authenticated scope every port resolution must carry. */
@@ -391,12 +397,14 @@ export interface ProductionPresentationGenerationCompositionOptions {
   readonly defaultSlideCount?: number;
   readonly env?: ProductionPresentationEnv;
   readonly imageGenerationCapability?: ImageGenerationCapability;
+  readonly jobRepository?: PresentationJobRepository;
   readonly journalCache?: ScopedPresentationJobEventJournalCache;
   readonly journalLoader?: PresentationJobEventJournalLoader;
   readonly multimodalChatPort?: MultimodalChatPort;
   readonly now?: () => string;
   readonly planner?: PresentationPlanner;
   readonly runnerFactory?: (provider: ProductionPresentationProvider) => PresentationRunner;
+  readonly templateLibrary?: FilePresentationTemplateLibrary;
   readonly worker?: Pick<InMemoryPresentationPlanWorker, 'run'>;
   readonly workspaceFactory?: (jobId: string) => PresentationWorkerWorkspace;
 }
@@ -436,10 +444,103 @@ export const createProductionPresentationGenerationComposition = (
     options.artifactStore ??
     new InMemoryPresentationArtifactStore(options.now ? () => options.now!() : undefined);
 
-  const pipeline = planner
-    ? createPresentationGenerationPipeline(planner, worker, {
-        ...(options.now ? { now: options.now } : {}),
+  const imageGenerationCapability = options.imageGenerationCapability
+    ? {
+        generate: (
+          scope: RuntimeScope,
+          slots: Parameters<ImageGenerationCapability['generate']>[1],
+          context: Parameters<ImageGenerationCapability['generate']>[2],
+        ) =>
+          atomicRuntime
+            ? atomicRuntime.invoke<Awaited<ReturnType<ImageGenerationCapability['generate']>>>(
+                'presentation.assets.generate',
+                { slots },
+                { scope, jobId: context?.jobId, signal: context?.signal },
+              )
+            : options.imageGenerationCapability!.generate(scope, slots, context),
+      }
+    : undefined;
+  const templateVisualLearning =
+    options.templateLibrary && options.multimodalChatPort
+      ? new TemplateVisualLearning({
+          library: options.templateLibrary,
+          store: artifactStore,
+          chat: options.multimodalChatPort,
+        })
+      : undefined;
+  const revisionAssetPlanner = options.multimodalChatPort
+    ? createRevisionAssetPlanner({
+        chatPort: options.multimodalChatPort,
+        readReusableAssets: async (refs, input) => {
+          const assets = await Promise.all(
+            refs.map(async (ref) => {
+              const artifact = await artifactStore.get(input.scope, ref);
+              return artifact?.bytes &&
+                ['image/png', 'image/jpeg', 'image/webp'].includes(artifact.mimeType ?? '')
+                ? { ref, name: artifact.name }
+                : null;
+            }),
+          );
+          return assets.filter((asset): asset is NonNullable<typeof asset> => !!asset);
+        },
+        extractTemplateComponent: templateVisualLearning
+          ? async (componentId, input) => {
+              if (!input.jobInput.template || !atomicRuntime)
+                throw new Error('Template runtime unavailable');
+              return atomicRuntime.invoke(
+                'presentation.template.extractComponent',
+                {
+                  templateId: input.jobInput.template,
+                  versionId: input.jobInput.options?.templateVersionId,
+                  componentId,
+                },
+                { scope: input.scope, jobId: input.jobId, signal: input.signal },
+              );
+            }
+          : undefined,
+        imageGenerationCapability,
+        processAssets: async (steps, input) => {
+          if (!atomicRuntime) throw new Error('Asset runtime is not configured');
+          const output = await runSkillSteps(
+            atomicRuntime,
+            steps,
+            { scope: input.scope, jobId: input.jobId, signal: input.signal },
+            (name) =>
+              [
+                'assets.removeBackground',
+                'assets.keyColor',
+                'assets.transform',
+                'assets.compose',
+                'assets.applyMask',
+              ].includes(name),
+          );
+          const result = output.last as { ref?: string };
+          if (!result?.ref) throw new Error('Asset workflow did not return an image');
+          return { ref: result.ref };
+        },
       })
+    : undefined;
+  const atomicRuntime: AtomicRuntime | undefined = planner
+    ? createPresentationAtomicRuntime({
+        planner,
+        operations: templateVisualLearning?.operations(),
+        chatPort: options.multimodalChatPort,
+        worker,
+        artifactStore,
+        templateLibrary: options.templateLibrary,
+        revisionAssetPlanner,
+        imageGenerationCapability: options.imageGenerationCapability,
+      })
+    : undefined;
+
+  const pipeline = planner
+    ? createPresentationGenerationPipeline(
+        atomicPlanner(atomicRuntime!),
+        atomicWorker(atomicRuntime!),
+        {
+          ...(options.now ? { now: options.now } : {}),
+        },
+      )
     : undefined;
 
   const contextFactory: PresentationGenerationContextFactory =
@@ -470,9 +571,13 @@ export const createProductionPresentationGenerationComposition = (
       : options.journalLoader;
 
   const composition = createPresentationRuntimeComposition({
+    atomicRuntime,
+    templateLibrary: options.templateLibrary,
+    revisionAssetPlanner,
     ...(capability ? { capability } : {}),
     contextFactory,
     generationArtifactStore: artifactStore,
+    jobRepository: options.jobRepository,
     ...(options.imageGenerationCapability
       ? { imageGenerationCapability: options.imageGenerationCapability }
       : {}),

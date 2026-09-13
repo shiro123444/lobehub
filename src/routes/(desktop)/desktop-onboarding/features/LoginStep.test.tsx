@@ -69,7 +69,7 @@ vi.mock('react-i18next', () => ({
           'authResult.failed.desc': 'Authorization failed',
           'authResult.failed.title': 'Authorization Failed',
           'authResult.success.desc':
-            'Please click the Start button below to continue using Nexus Desktop',
+            'Please click the Start button below to continue using Qingzhou Desktop',
           'authResult.success.title': 'Authorization Successful',
           'back': 'Back',
           'screen5.actions.cancel': 'Cancel',

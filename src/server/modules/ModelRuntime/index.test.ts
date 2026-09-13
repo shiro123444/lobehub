@@ -65,6 +65,41 @@ vi.mock('@/envs/llm', () => ({
  * with user payload. Test case below will test both the methods
  */
 describe('initModelRuntimeWithUserPayload method', () => {
+  it('pins Nexus chat to the configured Gemini backend while preserving image runtime', async () => {
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'test-jumi-chat-key');
+    vi.stubEnv('ANTHROPIC_BASE_URL', 'https://chat.example.test');
+    const imageRuntime = { chat: vi.fn(), createImage: vi.fn() } as unknown as ModelRuntime;
+    const chatRuntime = {
+      chat: vi.fn().mockResolvedValue('chat-response'),
+    } as unknown as ModelRuntime;
+    const initialize = vi
+      .spyOn(ModelRuntime, 'initializeWithProvider')
+      .mockReturnValueOnce(imageRuntime)
+      .mockReturnValueOnce(chatRuntime);
+    try {
+      const runtime = initModelRuntimeWithUserPayload(ModelProvider.Nexus, {
+        apiKey: 'image-key',
+        baseURL: 'https://image.example.test',
+      });
+      expect(runtime).toBe(imageRuntime);
+      expect(runtime.createImage).toBe(imageRuntime.createImage);
+      await runtime.chat({ model: 'stale-model', messages: [] });
+      expect(chatRuntime.chat).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3.8-flash-high' }),
+        undefined,
+      );
+      expect(initialize.mock.calls[1][1]).toEqual(
+        expect.objectContaining({
+          apiKey: 'test-jumi-chat-key',
+          baseURL: 'https://chat.example.test/v1',
+        }),
+      );
+    } finally {
+      initialize.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
   describe('should initialize with options correctly', () => {
     it('OpenAI provider: with apikey and endpoint', async () => {
       const jwtPayload: ClientSecretPayload = {

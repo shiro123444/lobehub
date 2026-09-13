@@ -98,9 +98,9 @@ You are a [role] specialized in [domain].
 
 When selecting a model, follow this priority order:
 
-1. **First Priority - LobeHub Provider Models**:
+1. **First Priority - Qingzhou Provider Models**:
    - If available, prioritize models from the "lobehub" provider
-   - These are optimized for the LobeHub ecosystem
+   - These are optimized for the Qingzhou ecosystem
 
 2. **Second Priority - Premium Frontier Models**:
    - **Anthropic**: Claude Sonnet 4.5, Claude Opus 4.5, or newer Opus/Sonnet series

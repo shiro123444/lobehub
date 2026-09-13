@@ -37,8 +37,9 @@ export interface RuntimeContext {
   dispose: () => Promise<void>;
   effect: (factory: () => Effect | void) => Disposable;
   readonly fiber: Fiber;
+  readonly isStaging?: boolean;
   on: (event: string, listener: Listener) => Disposable;
-  plugin: (plugin: RuntimePluginManifest, config?: unknown) => Promise<Fiber>;
+  plugin: (plugin: RuntimePluginManifest, config?: unknown, isStaging?: boolean) => Promise<Fiber>;
   provide: <T>(name: string, service: T) => Disposable;
   readonly root: RuntimeContext;
   withScope: (scope: ScopeKey) => RuntimeContext;

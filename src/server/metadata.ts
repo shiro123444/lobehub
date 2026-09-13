@@ -1,4 +1,4 @@
-import { BRANDING_NAME, ORG_NAME } from '@lobechat/business-const';
+import { BRANDING_NAME } from '@lobechat/business-const';
 import { type Metadata } from 'next';
 import qs from 'query-string';
 
@@ -12,7 +12,7 @@ import { formatDescLength, formatTitleLength } from '@/utils/genOG';
 
 export class Meta {
   public generate({
-    description = 'LobeChat offers you the best ChatGPT, OLLaMA, Gemini, Claude WebUI user experience',
+    description = `${BRANDING_NAME} offers a unified workspace for AI agents, models, and tools`,
     title,
     image = OG_URL,
     url,
@@ -91,7 +91,7 @@ export class Meta {
       card: 'summary_large_image',
       description,
       images: [image],
-      site: isCustomORG ? `@${ORG_NAME}` : '@lobehub',
+      site: isCustomORG ? '@Qingzhou' : '@lobehub',
       title,
       url,
     };

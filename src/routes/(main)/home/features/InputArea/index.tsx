@@ -18,7 +18,6 @@ import BotIntegrationBanner, { BOT_INTEGRATION_BANNER_ID } from './BotIntegratio
 import { stripMarkdownLinks } from './hintFormat';
 import MessengerBanner, { MESSENGER_BANNER_ID } from './MessengerBanner';
 import SkillInstallBanner, { SKILL_INSTALL_BANNER_ID } from './SkillInstallBanner';
-import StarterList from './StarterList';
 import { useSend } from './useSend';
 
 const leftActions: ActionKeys[] = ['agentMode', 'plus'];
@@ -165,8 +164,6 @@ const InputArea = () => {
           </ChatInputProvider>
         </DragUploadZone>
       </Flexbox>
-
-      <StarterList />
     </Flexbox>
   );
 };

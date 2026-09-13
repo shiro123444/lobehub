@@ -171,6 +171,7 @@ describe('PresentationGenerationPort', () => {
       scope,
     );
     await port.createJob(input);
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     const cancelled = await port.cancelJob('job-cancel');
     release();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -237,7 +238,7 @@ describe('PresentationGenerationPort', () => {
     expect(cancel2.state).toBe('completed');
   });
 
-  it('retries a failed or cancelled job by creating a new job and preserving original terminal state', async () => {
+  it('retries in the same conversation and preserves its identity', async () => {
     let idSeq = 0;
     const store = new InMemoryPresentationArtifactStore();
     let shouldFail = true;
@@ -288,20 +289,20 @@ describe('PresentationGenerationPort', () => {
     const failedJob = await port.getJob('job-1');
     expect(failedJob?.state).toBe('failed');
 
-    // Retry should create job-2
+    // Retry keeps the same conversation
     shouldFail = false;
     const retriedJob = await port.retryJob('job-1');
-    expect(retriedJob.jobId).toBe('job-2');
+    expect(retriedJob.jobId).toBe('job-1');
     expect(retriedJob.state).toBe('queued');
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // Original job remains failed
     const originalAfterRetry = await port.getJob('job-1');
-    expect(originalAfterRetry?.state).toBe('failed');
+    expect(originalAfterRetry?.state).toBe('completed');
 
     // New job succeeds
-    const completedRetriedJob = await port.getJob('job-2');
+    const completedRetriedJob = await port.getJob('job-1');
     expect(completedRetriedJob?.state).toBe('completed');
     expect(completedRetriedJob?.artifactIds).toEqual(['art-success']);
   });

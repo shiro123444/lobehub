@@ -5,7 +5,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ProductLogo } from '@/components/Branding';
-import NexusBrandLoading from '@/components/Loading/NexusBrandLoading';
+import QingzhouBrandLoading from '@/components/Loading/QingzhouBrandLoading';
 import { isCustomBranding } from '@/const/version';
 
 const MobileSwitchLoading: DynamicOptions['loading'] = memo(() => {
@@ -13,7 +13,7 @@ const MobileSwitchLoading: DynamicOptions['loading'] = memo(() => {
   return (
     <Flexbox height={'100%'} style={{ position: 'relative', userSelect: 'none' }} width={'100%'}>
       <Center flex={1} gap={16} width={'100%'}>
-        {isCustomBranding ? <NexusBrandLoading variant="hero" /> : null}
+        {isCustomBranding ? <QingzhouBrandLoading variant="hero" /> : null}
         {!isCustomBranding && (
           <>
             <ProductLogo size={48} type={'combine'} />

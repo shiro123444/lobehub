@@ -7,7 +7,7 @@ import { BUILTIN_AGENT_SLUGS } from '../../types';
 import { systemRoleTemplate } from './systemRole';
 
 export const TASK_AGENT: BuiltinAgentDefinition = {
-  avatar: '/avatars/nexus-mascot.png',
+  avatar: '/brand/qingzhou-mark.svg',
   persist: {
     model: DEFAULT_MODEL,
     provider: DEFAULT_PROVIDER,

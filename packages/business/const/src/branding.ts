@@ -2,12 +2,12 @@
 // if you want to use it in the commercial usage
 // please contact us for more information: hello@lobehub.com
 
-export const LOBE_CHAT_CLOUD = 'Nexus Cloud';
+export const LOBE_CHAT_CLOUD = '清舟云';
 
-export const BRANDING_NAME = 'Nexus';
-export const BRANDING_LOGO_URL = '/avatars/nexus-mascot.png';
+export const BRANDING_NAME = '清舟';
+export const BRANDING_LOGO_URL = '/brand/qingzhou-mark.svg';
 
-export const ORG_NAME = 'Nexus';
+export const ORG_NAME = '清舟';
 
 export const BRANDING_URL = {
   help: undefined,

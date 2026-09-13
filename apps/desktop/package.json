@@ -2,13 +2,13 @@
   "name": "lobehub-desktop-dev",
   "version": "0.0.0",
   "private": true,
-  "description": "Nexus Desktop Application",
+  "description": "Qingzhou Desktop Application",
   "homepage": "https://lobehub.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/lobehub/lobe-chat.git"
   },
-  "author": "LobeHub",
+  "author": "Qingzhou",
   "main": "./dist/main/index.js",
   "scripts": {
     "build:cli": "cd ../cli && cross-env MINIFY=1 bun run build",
@@ -127,5 +127,6 @@
       "react": "19.2.4",
       "react-dom": "19.2.4"
     }
-  }
+  },
+  "productName": "清舟"
 }

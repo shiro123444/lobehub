@@ -1,6 +1,11 @@
 import type { ImageGenerationPort, RuntimeScope } from '../../../../packages/runtime-contracts/src';
+import type { AtomicRuntime } from '../atomic-runtime';
 import type { PresentationArtifactStore } from './artifact-store';
 import type { PresentationAssetStore } from './asset-store';
+import {
+  createPresentationConversationCapability,
+  type PresentationConversationCapability,
+} from './conversation-capability';
 import {
   createPresentationRouteJournalBindings,
   type PresentationEventJournalScope,
@@ -10,6 +15,7 @@ import {
   ScopedPresentationJobEventJournalCache,
 } from './event-journal-cache';
 import type { PresentationPortFactory } from './factory';
+import type { PresentationJobRepository } from './file-storage';
 import type { PresentationGenerationCapability } from './generation-capability';
 import {
   handlePresentationGenerationRequest,
@@ -26,14 +32,12 @@ import {
 } from './image-generation-capability';
 import type { MultimodalChatPort } from './multimodal-chat-provider';
 import {
-  createPresentationConversationCapability,
-  type PresentationConversationCapability,
-} from './conversation-capability';
-import {
   createPresentationOutlineCapability,
   type PresentationOutlineCapability,
 } from './outline-capability';
 import type { PresentationPipelineContext } from './pipeline';
+import type { PresentationRevisionAssetPlanner } from './revision-assets';
+import type { FilePresentationTemplateLibrary } from './templates';
 
 export type PresentationGenerationContextFactory = (jobId: string) => PresentationPipelineContext;
 
@@ -43,6 +47,7 @@ export type PresentationRuntimeGenerationHandler = (
 ) => Promise<PresentationGenerationHttpResponse>;
 
 export interface PresentationRuntimeCompositionOptions {
+  readonly atomicRuntime?: AtomicRuntime;
   readonly capability?: PresentationGenerationCapability;
   readonly contextFactory?: PresentationGenerationContextFactory;
   /** Artifact store used by the asynchronous `/jobs` generation bridge. */
@@ -53,11 +58,14 @@ export interface PresentationRuntimeCompositionOptions {
   readonly imageGenerationCapability?: ImageGenerationCapability;
   readonly imageGenerationEventPublisherFactory?: ImageGenerationEventPublisherFactory;
   readonly imageGenerationPort?: ImageGenerationPort;
+  readonly jobRepository?: PresentationJobRepository;
   readonly journalCache?: ScopedPresentationJobEventJournalCache;
   readonly journalLoader?: PresentationJobEventJournalLoader;
   readonly multimodalChatPort?: MultimodalChatPort;
   readonly now?: () => string;
   readonly portFactory?: PresentationPortFactory;
+  readonly revisionAssetPlanner?: PresentationRevisionAssetPlanner;
+  readonly templateLibrary?: FilePresentationTemplateLibrary;
 }
 
 export type PresentationRuntimeCompositionErrorCode =
@@ -76,6 +84,7 @@ export class PresentationRuntimeCompositionError extends Error {
 }
 
 export interface PresentationRuntimeComposition {
+  readonly atomicRuntime?: AtomicRuntime;
   readonly conversationCapability?: PresentationConversationCapability;
   dispose: () => Promise<void>;
   readonly generationEventPublisherFactory: JournalPublisherFactory;
@@ -90,6 +99,8 @@ export interface PresentationRuntimeComposition {
   readonly outlineCapability?: PresentationOutlineCapability;
   readonly portFactory?: PresentationPortFactory;
   reset: (scope?: PresentationEventJournalScope) => number;
+  readonly revisionAssetPlanner?: PresentationRevisionAssetPlanner;
+  readonly templateLibrary?: FilePresentationTemplateLibrary;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -286,7 +297,11 @@ export const createPresentationRuntimeComposition = (
           if (existing) return existing;
           const port = createPresentationGenerationPort(
             {
+              atomicRuntime: compositionOptions.atomicRuntime,
+              templateLibrary: compositionOptions.templateLibrary,
+              revisionAssetPlanner: compositionOptions.revisionAssetPlanner,
               artifactStore: compositionOptions.generationArtifactStore!,
+              repository: compositionOptions.jobRepository,
               capability,
               contextFactory,
               eventPublisherFactory: bindings.generationEventPublisherFactory,
@@ -324,6 +339,9 @@ export const createPresentationRuntimeComposition = (
       ...(capability && typeof capability.dispose === 'function'
         ? [() => capability.dispose()]
         : []),
+      ...(compositionOptions.atomicRuntime
+        ? [() => compositionOptions.atomicRuntime!.dispose()]
+        : []),
       ...(disposableImageCapability?.dispose ? [() => disposableImageCapability.dispose!()] : []),
     ]);
     return disposePromise;
@@ -344,6 +362,7 @@ export const createPresentationRuntimeComposition = (
     : undefined;
 
   return {
+    atomicRuntime: compositionOptions.atomicRuntime,
     ...(conversationCapability ? { conversationCapability } : {}),
     generationEventPublisherFactory: bindings.generationEventPublisherFactory,
     generationHandler,

@@ -19,6 +19,43 @@ const deferred = () => {
 };
 
 describe('@lobechat/cordis-kernel', () => {
+  it('isolates scoped services while sharing root services', async () => {
+    const root = new Context();
+    const a = root.withScope('a');
+    const b = root.withScope('b');
+    root.provide('shared', 1);
+    a.provide('user', 'alice');
+    b.provide('user', 'bob');
+    expect(a.get('user')).toBe('alice');
+    expect(b.get('user')).toBe('bob');
+    expect(root.get('user')).toBeUndefined();
+    expect(b.get('shared')).toBe(1);
+    await root.dispose();
+    expect(a.get('user')).toBeUndefined();
+  });
+
+  it('disposes dependent siblings before their provider', async () => {
+    const context = new Context();
+    const order: string[] = [];
+    const provider = await context.plugin(
+      manifest('provider', (ctx) => {
+        ctx.provide('service', {});
+        return () => {
+          order.push('provider');
+        };
+      }),
+    );
+    const consumer = await context.plugin({
+      ...manifest('consumer', () => () => {
+        order.push('consumer');
+      }),
+      inject: ['service'],
+    });
+    await provider.dispose();
+    expect(consumer.state).toBe('disposed');
+    expect(order).toEqual(['consumer', 'provider']);
+    await context.dispose();
+  });
   it('keeps injected plugins pending and activates them after provide', async () => {
     const context = new Context();
     let activations = 0;

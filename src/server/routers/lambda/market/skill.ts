@@ -123,7 +123,7 @@ export const skillRouter = router({
         ]);
         const localCategories = localResult.status === 'fulfilled' ? localResult.value : [];
         if (localResult.status === 'rejected') {
-          log('NEXUS registry skill categories fallback: %O', localResult.reason);
+          log('Qingzhou registry skill categories fallback: %O', localResult.reason);
         }
 
         if (upstreamResult.status === 'fulfilled') {
@@ -158,7 +158,7 @@ export const skillRouter = router({
         const localDetail = await ctx.nexusRegistryService
           .getSkillDetail(input.identifier)
           .catch((error) => {
-            log('NEXUS registry skill detail fallback: %O', error);
+            log('Qingzhou registry skill detail fallback: %O', error);
             return undefined;
           });
         if (localDetail) return localDetail;
@@ -197,12 +197,12 @@ export const skillRouter = router({
         const { fetchPageSize, page, pageSize } = getMergedPageParams(input);
         const localList = await ctx.nexusRegistryService
           .listSkills({
-            ...(input ?? {}),
+            ...input,
             page: 1,
             pageSize: fetchPageSize,
           })
           .catch((error) => {
-            log('NEXUS registry skill list fallback: %O', error);
+            log('Qingzhou registry skill list fallback: %O', error);
             return undefined;
           });
 
@@ -211,12 +211,12 @@ export const skillRouter = router({
 
         const upstreamList = await ctx.marketService
           .searchSkill({
-            ...(input ?? {}),
+            ...input,
             page: 1,
             pageSize: fetchPageSize,
           })
           .catch((error) => {
-            log('Error fetching upstream skill list, using NEXUS registry only: %O', error);
+            log('Error fetching upstream skill list, using Qingzhou registry only: %O', error);
             return undefined;
           });
 

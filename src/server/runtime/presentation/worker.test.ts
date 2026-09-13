@@ -57,6 +57,49 @@ const expectCode = async (operation: Promise<unknown>, code: string) =>
   expect(operation).rejects.toMatchObject({ code });
 
 describe('C-52 presentation plan worker', () => {
+  it('projects speaker notes into live previews and saved slide artifacts without losing legacy metadata notes', async () => {
+    const journal = new PresentationJobEventJournal();
+    const publisher = new PresentationJobEventPublisher(journal);
+    const withNotes: PresentationPlan = {
+      ...plan,
+      slides: [
+        {
+          ...plan.slides[0]!,
+          metadata: { notes: 'Outdated metadata notes' },
+          notes: '介绍产品愿景。\n停顿后进入演示。',
+        },
+        { ...plan.slides[1]!, metadata: { notes: 'Legacy notes to preserve' } },
+        {
+          ...plan.slides[1]!,
+          metadata: { notes: 'Explicitly cleared notes' },
+          notes: '',
+          order: 2,
+          slideId: 's-3',
+        },
+      ],
+    };
+    const { context: ctx, writes } = context({
+      eventPublisher: publisher,
+      versionId: 'notes-version',
+    });
+    const result = await new InMemoryPresentationPlanWorker().run(withNotes, ctx);
+    const expected = [withNotes.slides[0]!.notes, 'Legacy notes to preserve', ''];
+    expect(writes.get('notes/001.md')).toBe(expected[0]);
+    expect(
+      result.artifacts
+        .filter((artifact) => artifact.type === 'svg')
+        .map((artifact) => artifact.metadata?.notes),
+    ).toEqual(expected);
+    const previews = journal.replay('job-1').flatMap((event) => {
+      const artifact = (
+        event.data as { artifact?: { artifactId?: string; metadata?: { notes?: string } } }
+      ).artifact;
+      return artifact?.artifactId?.includes(':preview:') ? [artifact.metadata?.notes] : [];
+    });
+    expect(previews).toEqual(expected);
+    expect(withNotes.slides[0]!.metadata?.notes).toBe('Outdated metadata notes');
+  });
+
   it('materializes stable UTF-8 layout and returns defensive artifact copies', async () => {
     const { context: ctx, writes, sourceBytes, sourceMetadata } = context();
     const result = await new InMemoryPresentationPlanWorker().run(plan, ctx);

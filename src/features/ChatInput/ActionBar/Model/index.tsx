@@ -4,8 +4,8 @@ import { createStaticStyles } from 'antd-style';
 import { memo, useCallback } from 'react';
 
 import ModelSwitchPanel from '@/features/ModelSwitchPanel';
+import { useJumiChatModel } from '@/hooks/useJumiChatModel';
 import { useAgentStore } from '@/store/agent';
-import { agentByIdSelectors } from '@/store/agent/selectors';
 
 import { useAgentId } from '../../hooks/useAgentId';
 import { useActionBarContext } from '../context';
@@ -36,15 +36,12 @@ const ModelSwitch = memo(() => {
   const iconSize = actionSize?.size ?? 20;
 
   const agentId = useAgentId();
-  const [model, provider, updateAgentConfigById] = useAgentStore((s) => [
-    agentByIdSelectors.getAgentModelById(agentId)(s),
-    agentByIdSelectors.getAgentModelProviderById(agentId)(s),
-    s.updateAgentConfigById,
-  ]);
+  const { model, provider } = useJumiChatModel(agentId);
+  const updateAgentConfigById = useAgentStore((s) => s.updateAgentConfigById);
 
   const handleModelChange = useCallback(
     async (params: { model: string; provider: string }) => {
-      await updateAgentConfigById(agentId, params);
+      if (agentId !== 'ppt-agent') await updateAgentConfigById(agentId, params);
     },
     [agentId, updateAgentConfigById],
   );

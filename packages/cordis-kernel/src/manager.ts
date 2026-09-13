@@ -1,5 +1,7 @@
+import type { CapabilityRegistry } from './capability';
 import { Context } from './context';
 import type { Fiber } from './fiber';
+import type { ToolRegistry } from './tool';
 import type { PermissionManifest, RuntimePluginKind, RuntimePluginManifest } from './types';
 
 export type PluginRuntimeState =
@@ -67,31 +69,56 @@ const stateOf = (fiber: Fiber): PluginRuntimeState => {
 };
 
 export class PluginManager {
-  private readonly context = new Context();
+  public readonly context: Context;
   private readonly definitions = new Map<string, RuntimePluginManifest[]>();
   private readonly records = new Map<string, ManagedPlugin>();
   private readonly current = new Map<string, ManagedPlugin>();
   private readonly operations = new Map<string, Promise<PluginRuntimeState>>();
   private readonly lastErrors = new Map<string, unknown>();
 
-  constructor(manifests: RuntimePluginManifest[]) {
-    const seen = new Set<string>();
-
+  constructor(manifests: RuntimePluginManifest[] = [], context?: Context) {
+    this.context = context ?? new Context();
     for (const manifest of manifests) {
-      const key = keyOf(manifest);
-      if (seen.has(key)) {
-        throw new PluginManagerError('PLUGIN_DUPLICATE', `Duplicate plugin manifest: ${key}`);
-      }
-      seen.add(key);
-
-      const versions = this.definitions.get(manifest.id) ?? [];
-      versions.push(manifest);
-      this.definitions.set(manifest.id, versions);
-
-      const record: ManagedPlugin = { manifest, state: 'installed' };
-      this.records.set(key, record);
-      if (!this.current.has(manifest.id)) this.current.set(manifest.id, record);
+      this.install(manifest);
     }
+  }
+
+  install(manifest: RuntimePluginManifest): void {
+    const key = keyOf(manifest);
+    if (this.records.has(key)) {
+      throw new PluginManagerError('PLUGIN_DUPLICATE', `Duplicate plugin manifest: ${key}`);
+    }
+
+    const versions = this.definitions.get(manifest.id) ?? [];
+    versions.push(manifest);
+    this.definitions.set(manifest.id, versions);
+
+    const record: ManagedPlugin = { manifest, state: 'installed' };
+    this.records.set(key, record);
+    if (!this.current.has(manifest.id)) this.current.set(manifest.id, record);
+  }
+
+  async uninstall(id: string): Promise<void> {
+    await this.enqueue(id, async () => {
+      const record = this.current.get(id);
+      if (record) {
+        await this.unmountInternal(id);
+        this.current.delete(id);
+      }
+      const versions = this.definitions.get(id);
+      if (versions) {
+        for (const manifest of versions) {
+          this.records.delete(keyOf(manifest));
+        }
+        this.definitions.delete(id);
+      }
+      this.lastErrors.delete(id);
+      return 'disabled';
+    });
+  }
+
+  has(id: string): boolean {
+    return this.current.has(id);
   }
 
   async list(): Promise<PluginDescriptor[]> {
@@ -129,8 +156,8 @@ export class PluginManager {
     return this.enqueue(id, () => this.unmountInternal(id));
   }
 
-  reload(id: string, config?: unknown): Promise<PluginRuntimeState> {
-    return this.enqueue(id, () => this.reloadInternal(id, config));
+  reload(id: string, config?: unknown, targetVersion?: string): Promise<PluginRuntimeState> {
+    return this.enqueue(id, () => this.reloadInternal(id, config, targetVersion));
   }
 
   private enqueue(
@@ -138,9 +165,7 @@ export class PluginManager {
     operation: () => Promise<PluginRuntimeState>,
   ): Promise<PluginRuntimeState> {
     const existing = this.operations.get(id);
-    if (existing) return existing;
-
-    const task = operation().finally(() => {
+    const task = (existing ? existing.then(operation, operation) : operation()).finally(() => {
       if (this.operations.get(id) === task) this.operations.delete(id);
     });
     this.operations.set(id, task);
@@ -193,7 +218,11 @@ export class PluginManager {
     return record.state;
   }
 
-  private async reloadInternal(id: string, config?: unknown): Promise<PluginRuntimeState> {
+  private async reloadInternal(
+    id: string,
+    config?: unknown,
+    targetVersion?: string,
+  ): Promise<PluginRuntimeState> {
     const oldRecord = this.current.get(id);
     if (!oldRecord)
       throw new PluginManagerError('PLUGIN_NOT_FOUND', `Plugin is not installed: ${id}`);
@@ -201,8 +230,8 @@ export class PluginManager {
     this.refresh(oldRecord);
     if (oldRecord.state !== 'active') return this.mountInternal(id, config);
 
-    const candidateManifest = this.nextManifest(id, oldRecord.manifest);
-    const result = await this.activate(candidateManifest, config);
+    const candidateManifest = this.resolveCandidateManifest(id, oldRecord.manifest, targetVersion);
+    const result = await this.activate(candidateManifest, config, true);
     const candidateKey = keyOf(candidateManifest);
 
     if (result.state !== 'active') {
@@ -210,17 +239,38 @@ export class PluginManager {
         id,
         result.record.error ?? new Error('Plugin reload did not become active'),
       );
+      if (result.record.fiber) {
+        result.record.fiber.ctx.discardStaged();
+        const tools = this.context.get<ToolRegistry>('cordis.tools');
+        tools?.discardStaging(result.record.fiber);
+        const capabilities = this.context.get<CapabilityRegistry>('cordis.capabilities');
+        capabilities?.discardStaging(result.record.fiber);
+        await result.record.fiber.dispose();
+      }
       if (candidateKey !== keyOf(oldRecord.manifest)) this.records.set(candidateKey, result.record);
       return 'active';
+    }
+
+    const candidateFiber = result.record.fiber;
+    if (candidateFiber) {
+      candidateFiber.ctx.commitStaged();
+      const tools = this.context.get<ToolRegistry>('cordis.tools');
+      tools?.commitStaging(candidateFiber);
+      const capabilities = this.context.get<CapabilityRegistry>('cordis.capabilities');
+      capabilities?.commitStaging(candidateFiber);
     }
 
     const newRecord = result.record;
     this.records.set(candidateKey, newRecord);
     this.current.set(id, newRecord);
 
-    oldRecord.state = 'unloading';
-    await oldRecord.fiber?.dispose();
-    oldRecord.state = 'disabled';
+    if (oldRecord.fiber) {
+      oldRecord.state = 'unloading';
+      const tools = this.context.get<ToolRegistry>('cordis.tools');
+      await tools?.drainInFlight(oldRecord.fiber, 5000);
+      await oldRecord.fiber.dispose();
+      oldRecord.state = 'disabled';
+    }
     this.lastErrors.delete(id);
     return 'active';
   }
@@ -228,12 +278,13 @@ export class PluginManager {
   private async activate(
     manifest: RuntimePluginManifest,
     config?: unknown,
+    isStaging = false,
   ): Promise<ActivationResult> {
     const record: ManagedPlugin = { manifest, state: 'pending' };
     const before = new Set(this.context.getFibers());
 
     try {
-      const fiber = await this.context.plugin(manifest, config);
+      const fiber = await this.context.plugin(manifest, config, isStaging);
       record.fiber = fiber;
       await this.context.flushPending();
       this.refresh(record);
@@ -257,11 +308,24 @@ export class PluginManager {
     for (const fiber of newFibers) await fiber.dispose();
   }
 
-  private nextManifest(id: string, current: RuntimePluginManifest): RuntimePluginManifest {
+  private resolveCandidateManifest(
+    id: string,
+    current: RuntimePluginManifest,
+    targetVersion?: string,
+  ): RuntimePluginManifest {
     const versions = this.definitions.get(id) ?? [];
-    return (
-      [...versions].reverse().find((manifest) => keyOf(manifest) !== keyOf(current)) ?? current
-    );
+    if (targetVersion !== undefined) {
+      const match = versions.find((manifest) => manifest.version === targetVersion);
+      if (!match) {
+        throw new PluginManagerError(
+          'PLUGIN_NOT_FOUND',
+          `Version ${targetVersion} not found for plugin: ${id}`,
+        );
+      }
+      return match;
+    }
+
+    return versions.at(-1) ?? current;
   }
 
   private refresh(record: ManagedPlugin): void {

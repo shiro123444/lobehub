@@ -83,7 +83,62 @@ export interface GLMChatContext {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
   readonly traceId?: string;
+  /** Process-local permission for images read from the authenticated asset store. Never wire input. */
+  readonly trustedImages?: GLMTrustedChatImages;
 }
+
+export interface GLMServerImageInput {
+  readonly base64: string;
+  readonly mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+}
+
+declare const trustedImagesBrand: unique symbol;
+export interface GLMTrustedChatImages {
+  readonly [trustedImagesBrand]: true;
+  readonly urls: readonly string[];
+}
+
+const trustedImagePermissions = new WeakMap<
+  object,
+  { scopeKey: string; urls: ReadonlySet<string> }
+>();
+
+/** Only server code with authenticated asset bytes may create this non-serializable permission. */
+export const createTrustedChatImages = (
+  images: readonly GLMServerImageInput[],
+  scope: RuntimeScope,
+): GLMTrustedChatImages => {
+  const owner = cloneScope(scope);
+  if (!Array.isArray(images) || images.length > 4)
+    throw invalid('Trusted image input is limited to four images', 'trustedImages');
+  const maxBytes = 8 * 1024 * 1024;
+  const urls = images.map((image) => {
+    if (
+      !image ||
+      !['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ||
+      typeof image.base64 !== 'string' ||
+      !image.base64 ||
+      image.base64.length > Math.ceil(maxBytes / 3) * 4 ||
+      !/^[\d+/A-Za-z]+={0,2}$/u.test(image.base64)
+    )
+      throw invalid('Trusted images must be bounded PNG, JPEG or WebP data', 'trustedImages');
+    const bytes = Buffer.from(image.base64, 'base64');
+    if (bytes.length > maxBytes || bytes.toString('base64') !== image.base64)
+      throw invalid('Trusted image base64 is invalid or exceeds the size limit', 'trustedImages');
+    const matchesType =
+      image.mimeType === 'image/png'
+        ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        : image.mimeType === 'image/jpeg'
+          ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+          : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+    if (!matchesType)
+      throw invalid('Trusted image data does not match its MIME type', 'trustedImages');
+    return `data:${image.mimeType};base64,${image.base64}`;
+  });
+  const permission = Object.freeze({ urls: Object.freeze(urls) }) as GLMTrustedChatImages;
+  trustedImagePermissions.set(permission, { scopeKey: scopeKey(owner), urls: new Set(urls) });
+  return permission;
+};
 
 export interface GLMChatProviderManifest {
   readonly displayName: string;
@@ -197,10 +252,14 @@ const cloneScope = (value: unknown): RuntimeScope => {
 
 const scopeKey = (scope: RuntimeScope): string => JSON.stringify([scope.userId, scope.sessionId]);
 
-const validateMessages = (messages: unknown): readonly GLMChatMessage[] => {
+const validateMessages = (
+  messages: unknown,
+  trustedImages?: ReadonlySet<string>,
+): readonly GLMChatMessage[] => {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw invalid('messages must be a non-empty array', 'messages');
   }
+  let trustedImageCount = 0;
 
   return Object.freeze(
     messages.map((m, index) => {
@@ -243,7 +302,17 @@ const validateMessages = (messages: unknown): readonly GLMChatMessage[] => {
                 `messages[${index}].content[${partIndex}].image_url`,
               );
             }
-            const safeUrl = assertSafeImageUrl(part.image_url.url);
+            const candidate = part.image_url.url;
+            if (
+              typeof candidate === 'string' &&
+              trustedImages?.has(candidate) &&
+              ++trustedImageCount > 4
+            )
+              throw invalid('At most four trusted images can be sent per request', 'trustedImages');
+            const safeUrl =
+              typeof candidate === 'string' && trustedImages?.has(candidate)
+                ? candidate
+                : assertSafeImageUrl(candidate);
             return {
               image_url: {
                 ...(part.image_url.detail ? { detail: part.image_url.detail as any } : {}),
@@ -329,7 +398,12 @@ export class GLMMultimodalChatAdapter implements GLMMultimodalChatPort {
 
     if (context.signal?.aborted) throw cancelled();
 
-    const validatedMessages = validateMessages(request.messages);
+    const trustedImages = context.trustedImages
+      ? trustedImagePermissions.get(context.trustedImages)
+      : undefined;
+    if (context.trustedImages && (!trustedImages || trustedImages.scopeKey !== scopeKey(scope)))
+      throw invalid('Trusted image permissions cannot be supplied as JSON', 'trustedImages');
+    const validatedMessages = validateMessages(request.messages, trustedImages?.urls);
     const resolvedModel =
       this.allowRequestModelOverride && nonEmptyString(request.model)
         ? request.model.trim()

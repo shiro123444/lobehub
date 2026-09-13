@@ -56,7 +56,7 @@ export default class NotificationCtr extends ControllerModule {
     }
 
     const notification = new Notification({
-      body: 'LobeHub can now send you notifications.',
+      body: 'Qingzhou can now send you notifications.',
       title: 'Notification Permission',
     });
 

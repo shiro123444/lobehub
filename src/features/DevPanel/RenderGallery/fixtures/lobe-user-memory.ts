@@ -28,7 +28,7 @@ export default defineFixtures({
         title: 'Preview workflow preference',
         withPreference: {
           appContext: {
-            app: 'LobeHub Desktop',
+            app: 'Qingzhou Desktop',
             feature: 'Builtin tool rendering',
             surface: '/devtools',
           },

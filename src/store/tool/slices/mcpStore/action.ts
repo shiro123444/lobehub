@@ -235,7 +235,7 @@ export class PluginMCPStoreActionImpl {
     let data: any;
     let result: CheckMcpInstallResult | undefined;
     let connection: any;
-    const userAgent = `Nexus Desktop/${CURRENT_VERSION}`;
+    const userAgent = `Qingzhou Desktop/${CURRENT_VERSION}`;
 
     try {
       // Check if already cancelled
@@ -297,7 +297,7 @@ export class PluginMCPStoreActionImpl {
           serverConfig?.serverConfig?.enableMarketTrustedClient || false;
         const hasCloudEndpoint = stdioOption && haveCloudEndpoint && enableMarketTrustedClient;
 
-        // Nexus self-hosted priority:
+        // Qingzhou self-hosted priority:
         // 1. Direct HTTP / Streamable HTTP where the MCP provider supports it.
         // 2. Server-side MCP proxy for stdio on Web when MCP_PROXY_ENABLED=1.
         // 3. Official cloud gateway only when Trusted Client is explicitly configured.
@@ -599,7 +599,10 @@ export class PluginMCPStoreActionImpl {
       if (finalConnection.type === 'http' && mergedHttpHeaders) {
         finalConnection.headers = mergedHttpHeaders;
       }
-      if ((finalConnection.type === 'stdio' || (finalConnection.type as any) === 'mcpProxy') && mergedStdioEnv) {
+      if (
+        (finalConnection.type === 'stdio' || (finalConnection.type as any) === 'mcpProxy') &&
+        mergedStdioEnv
+      ) {
         finalConnection.env = mergedStdioEnv;
       }
       if (finalConnection.type === 'cloud' && mergedCloudHeaders) {

@@ -41,17 +41,12 @@ export const usePresentationStudio = (
   const initialLoading = store((s) => s.initialLoading);
 
   useEffect(() => {
-    if (!effectiveJobIds || effectiveJobIds.length === 0) {
-      if (store.getState().initialLoading) {
-        store.getState().setInitialLoading(false);
-      }
-      return;
-    }
-
     let disposed = false;
     store.getState().setInitialLoading(true);
     const restore = async () => {
-      for (const jobId of effectiveJobIds) {
+      const recovered = await store.getState().restoreJobList();
+      const targets = effectiveJobIds?.length ? effectiveJobIds : recovered.slice(0, 1);
+      for (const jobId of targets) {
         if (disposed) return;
 
         // C-112-04: Restore highest seq before streaming if available
@@ -105,6 +100,32 @@ export const usePresentationStudio = (
       const job = state.selectedJobId ? state.jobs[state.selectedJobId] : undefined;
       const ids = job?.artifactIds ?? [];
       if (ids.length === 0 || ids.includes(state.selectedArtifactId ?? '')) return;
+
+      const selected = state.selectedArtifactId
+        ? state.artifacts[state.selectedArtifactId]
+        : undefined;
+      const candidates = ids.map((id) => state.artifacts[id]).filter(Boolean);
+      const slideId = selected?.metadata?.slideId;
+      const slideNumber = selected?.metadata?.slideNumber;
+      const matchingSlide =
+        (slideId !== undefined
+          ? candidates.find((artifact) => artifact.metadata?.slideId === slideId)
+          : undefined) ??
+        (slideNumber !== undefined
+          ? candidates.find((artifact) => artifact.metadata?.slideNumber === slideNumber)
+          : undefined);
+      if (matchingSlide) {
+        selectArtifact(matchingSlide.artifactId);
+        return;
+      }
+
+      // A new version announces its ids before all snapshots are fetched.
+      // Keep the old page identity until its replacement can be resolved.
+      if (
+        selected &&
+        (candidates.length < ids.length || job?.state === 'running' || job?.state === 'queued')
+      )
+        return;
       selectArtifact(ids[0]);
     });
     return unsubscribe;

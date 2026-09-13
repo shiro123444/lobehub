@@ -3,10 +3,10 @@ import { createStaticStyles } from 'antd-style';
 import { ChevronDownIcon } from 'lucide-react';
 import { memo, useCallback } from 'react';
 
+import { JUMI_CHAT_MODEL_NAME } from '@/const/jumi';
 import ModelSwitchPanel from '@/features/ModelSwitchPanel';
+import { useJumiChatModel } from '@/hooks/useJumiChatModel';
 import { useAgentStore } from '@/store/agent';
-import { agentByIdSelectors } from '@/store/agent/selectors';
-import { aiModelSelectors, useAiInfraStore } from '@/store/aiInfra';
 
 import { useAgentId } from '../../hooks/useAgentId';
 import { useActionBarContext } from '../context';
@@ -39,18 +39,14 @@ const ModelLabel = memo(() => {
   const { dropdownPlacement } = useActionBarContext();
 
   const agentId = useAgentId();
-  const [model, provider, updateAgentConfigById] = useAgentStore((s) => [
-    agentByIdSelectors.getAgentModelById(agentId)(s),
-    agentByIdSelectors.getAgentModelProviderById(agentId)(s),
-    s.updateAgentConfigById,
-  ]);
+  const { model, provider } = useJumiChatModel(agentId);
+  const updateAgentConfigById = useAgentStore((s) => s.updateAgentConfigById);
 
-  const enabledModel = useAiInfraStore(aiModelSelectors.getEnabledModelById(model, provider));
-  const displayName = enabledModel?.displayName || model;
+  const displayName = JUMI_CHAT_MODEL_NAME;
 
   const handleModelChange = useCallback(
     async (params: { model: string; provider: string }) => {
-      await updateAgentConfigById(agentId, params);
+      if (agentId !== 'ppt-agent') await updateAgentConfigById(agentId, params);
     },
     [agentId, updateAgentConfigById],
   );
