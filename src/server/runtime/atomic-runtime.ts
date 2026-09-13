@@ -3,13 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { z, type ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
-import {
-  Context,
-  PluginManager,
-  type RuntimeContext,
-  ToolRegistry,
-} from '../../../packages/cordis-kernel/src';
+import type { RuntimeContext } from '../../../packages/cordis-kernel/src';
 import type { RuntimeScope } from '../../../packages/runtime-contracts/src';
+import { CordisAtomicHost, type CordisAtomicInstance } from './cordis-atomic-host';
 
 export interface AtomicInvocation {
   readonly jobId?: string;
@@ -49,9 +45,9 @@ const scopeSchema = z.object({
 
 /** Generic plugin host. Trusted invocation context is never accepted in tool arguments. */
 export class AtomicRuntime {
-  private readonly context = new Context();
-  private readonly registry = new ToolRegistry();
-  private readonly manager = new PluginManager([], this.context);
+  private readonly host = new CordisAtomicHost();
+  private readonly registry = this.host.tools;
+  private readonly instances = new Map<string, CordisAtomicInstance>();
   private readonly plugins = new Map<string, AtomicPlugin>();
   private readonly leases = new Map<string, number>();
   private readonly changing = new Set<string>();
@@ -59,9 +55,9 @@ export class AtomicRuntime {
   private readonly controllers = new Set<AbortController>();
   private pending: Promise<void> = Promise.resolve();
   private disposed = false;
+  private disposal?: Promise<void>;
 
   constructor(plugins: AtomicPlugin[] = []) {
-    this.context.provide('cordis.tools', this.registry);
     for (const plugin of plugins) this.pending = this.pending.then(() => this.install(plugin));
   }
 
@@ -108,9 +104,17 @@ export class AtomicRuntime {
   }
 
   private async install(plugin: AtomicPlugin) {
-    this.manager.install(this.manifest(plugin));
-    if ((await this.manager.mount(plugin.id)) !== 'active')
-      throw fail('PLUGIN_START_FAILED', `Cannot mount ${plugin.id}`);
+    let instance: CordisAtomicInstance;
+    try {
+      instance = await this.host.mount(this.manifest(plugin));
+    } catch (cause) {
+      throw Object.assign(fail('PLUGIN_START_FAILED', `Cannot mount ${plugin.id}`), { cause });
+    }
+    if (this.disposed) {
+      await instance.dispose();
+      throw fail('PROVIDER_UNAVAILABLE', 'Runtime is disposed');
+    }
+    this.instances.set(plugin.id, instance);
     this.plugins.set(plugin.id, plugin);
   }
 
@@ -131,7 +135,8 @@ export class AtomicRuntime {
       throw fail('PLUGIN_BUSY', 'Finish or cancel active jobs before unloading this plugin');
     this.changing.add(pluginId);
     try {
-      await this.manager.uninstall(pluginId);
+      await this.instances.get(pluginId)?.dispose();
+      this.instances.delete(pluginId);
       this.plugins.delete(pluginId);
     } finally {
       this.changing.delete(pluginId);
@@ -190,7 +195,7 @@ export class AtomicRuntime {
     };
     try {
       publish('started');
-      const ctx = Object.assign(this.context.withScope(scopeKey), {
+      const ctx = Object.assign(this.host.context.withScope(scopeKey), {
         invocation: { ...invocation, signal },
       });
       const result = await this.registry.execute(name, input, ctx);
@@ -219,7 +224,14 @@ export class AtomicRuntime {
     scopeSchema.parse(scope);
     await this.pending;
     return {
-      plugins: await this.manager.list(),
+      plugins: [...this.instances.values()].map((instance) => ({
+        id: instance.id,
+        version: instance.version,
+        kind: 'capability' as const,
+        permissions: { tools: this.plugins.get(instance.id)!.operations.map((op) => op.name) },
+        state: instance.state,
+        error: instance.error,
+      })),
       operations: this.events.get(JSON.stringify([scope.userId, scope.sessionId])) ?? [],
     };
   }
@@ -231,20 +243,37 @@ export class AtomicRuntime {
       throw fail('PLUGIN_BUSY', 'Finish or cancel active jobs before replacing this plugin');
     this.changing.add(plugin.id);
     try {
-      this.manager.install(this.manifest(plugin));
-      const state = await this.manager.reload(plugin.id, undefined, plugin.version);
-      if (state !== 'active' || this.manager.getError(plugin.id))
-        throw fail('PLUGIN_START_FAILED', `Cannot replace ${plugin.id}`);
+      let candidate: CordisAtomicInstance | undefined;
+      try {
+        candidate = await this.host.mount(this.manifest(plugin), true);
+        if (this.disposed) throw fail('PROVIDER_UNAVAILABLE', 'Runtime is disposed');
+        this.host.commit(candidate);
+      } catch (cause) {
+        if (candidate) {
+          this.host.discard(candidate);
+          await candidate.dispose();
+        }
+        throw Object.assign(fail('PLUGIN_START_FAILED', `Cannot replace ${plugin.id}`), { cause });
+      }
+      const previous = this.instances.get(plugin.id);
+      this.instances.set(plugin.id, candidate);
       this.plugins.set(plugin.id, plugin);
+      await previous?.dispose();
     } finally {
       this.changing.delete(plugin.id);
     }
   }
-  async dispose() {
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
     this.disposed = true;
     for (const controller of this.controllers) controller.abort();
-    await this.pending.catch(() => undefined);
-    await this.context.dispose();
-    this.events.clear();
+    this.disposal = (async () => {
+      await this.pending.catch(() => undefined);
+      await this.host.dispose();
+      this.instances.clear();
+      this.plugins.clear();
+      this.events.clear();
+    })();
+    return this.disposal;
   }
 }

@@ -193,7 +193,7 @@ export class Context implements RuntimeContext {
   }
 
   effect(factory: () => Effect | void): Disposable {
-    return this.fiber.collectEffect(factory());
+    return this.fiber.effect(factory);
   }
 
   async dispose(): Promise<void> {

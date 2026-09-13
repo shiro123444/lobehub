@@ -1,8 +1,10 @@
 # Cordis 原子能力与 PPT 插件开发
 
-本文记录当前实现（2026-09-12）。接口以 [AtomicRuntime](../../src/server/runtime/atomic-runtime.ts)、[PPT 原子插件](../../src/server/runtime/presentation/atomic-plugin.ts) 和 [GenerationPort](../../src/server/runtime/presentation/generation-port.ts) 为准。
+本文记录当前实现（2026-09-13）。接口以 [AtomicRuntime](../../src/server/runtime/atomic-runtime.ts)、[PPT 原子插件](../../src/server/runtime/presentation/atomic-plugin.ts) 和 [GenerationPort](../../src/server/runtime/presentation/generation-port.ts) 为准。
 
-PPT 的生产装配使用真实 Cordis `Context`、`PluginManager` 和 `ToolRegistry`。生成、资产规划、渲染、校验及导出通过注册的操作执行；对话队列、任务恢复和产物版本由 PPT 领域层管理。其他插件可以使用同一个通用运行时，不需要继承 PPT 实现。
+PPT 的原子操作通过 [CordisAtomicHost](../../src/server/runtime/cordis-atomic-host.ts) 挂载到真实 Cordis `Context` / `Fiber`。上游源码固定在 [cordis-foundation](../../packages/cordis-foundation/PROVENANCE.md)，工具注册表、候选工具暂存和调用版本锁由清舟适配层保留。此前本文将自研 `Context` / `PluginManager` 称为真实 Cordis，并不准确。
+
+生成、资产规划、渲染、校验及导出通过注册的操作执行；对话队列、任务恢复和产物版本由 PPT 领域层管理。其他插件可以使用同一个通用运行时，不需要继承 PPT 实现。其他仍引用 `cordis-kernel/Context` 的平台模块处于兼容阶段，不能据此认定全平台迁移已经完成。
 
 ## 定义可组合操作
 
@@ -87,7 +89,7 @@ try {
 
 有活跃 lease 时，卸载和替换返回 `PLUGIN_BUSY`，调用方应完成或取消任务后再重试。PPT 的 `GenerationPort.run` 已持有整个运行周期的 lease，避免同一次运行混用两版实现。释放函数可以重复调用。
 
-替换使用 Cordis staging：候选激活失败时旧实现继续运行；候选已注册的工具也会清理。使用新的实现版本号发布替换，避免用同一个版本名指代不同代码。
+替换先由真实 Cordis 加载候选插件，其工具暂存于清舟 `ToolRegistry`。候选激活成功后同步切换工具所有者，再卸载旧插件；候选激活失败时旧实现继续运行。这里保证的是工具目录切换，不提供任意文件、网络或服务发布的事务回滚。使用新的实现版本号发布替换，避免用同一个版本名指代不同代码。
 
 版本锁保护当前进程内的一次运行。插件代码与安装列表尚未作为可恢复的二进制版本仓库持久化；进程重启后加载什么实现仍由宿主装配决定，不能声称历史任务会自动恢复到旧插件代码。
 

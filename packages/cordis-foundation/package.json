@@ -1,0 +1,22 @@
+{
+  "name": "@lobechat/cordis-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auditable real Cordis foundation package vendored from deepseek-harness",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build:types": "tsc --build vendor/cosmokit/tsconfig.json && tsc --build vendor/cordis/tsconfig.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  }
+}

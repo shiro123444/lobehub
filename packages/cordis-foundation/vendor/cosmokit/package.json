@@ -1,0 +1,26 @@
+{
+  "name": "@deepseek-ai/cosmokit",
+  "description": "A collection of common utilities",
+  "version": "1.8.3",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "vendor/cosmokit"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build:types": "tsc --build tsconfig.json"
+  },
+  "author": "Shigma <shigma10826@gmail.com>",
+  "license": "MIT"
+}

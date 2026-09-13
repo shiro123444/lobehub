@@ -18,6 +18,7 @@ LICENSE
 
 # dependencies
 node_modules
+packages/cordis-foundation/vendor/
 *.log
 *.lock
 package-lock.json

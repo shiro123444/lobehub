@@ -193,4 +193,201 @@ describe('@lobechat/cordis-kernel', () => {
     expect(disposals).toBe(1);
     expect(context.fiber.state).toBe('disposed');
   });
+
+  it('deduplicates identical disposer functions in collect', async () => {
+    const context = new Context();
+    let runs = 0;
+    const disposer = () => {
+      runs += 1;
+    };
+
+    const first = context.fiber.collect(disposer);
+    const second = context.fiber.collect(disposer);
+
+    expect(first).toBe(second);
+    await first();
+    await second();
+    expect(runs).toBe(1);
+
+    await context.dispose();
+    expect(runs).toBe(1);
+  });
+
+  it('ensures public effect disposer is single-shot and repeat calls are no-op', async () => {
+    const context = new Context();
+    let cleanups = 0;
+
+    const dispose = context.effect(() => () => {
+      cleanups += 1;
+    });
+
+    const res1 = dispose();
+    const res2 = dispose();
+
+    expect(res1).toBeUndefined();
+    expect(res2).toBeUndefined();
+    expect(cleanups).toBe(1);
+
+    await context.dispose();
+    expect(cleanups).toBe(1);
+  });
+
+  it('rethrows errors to public caller awaiting effect disposer while owner dispose continues', async () => {
+    const context = new Context();
+    let secondRan = false;
+
+    context.effect(() => () => {
+      secondRan = true;
+    });
+
+    const disposeFailing = context.effect(() => () => {
+      throw new Error('failing effect');
+    });
+
+    expect(() => disposeFailing()).toThrow('failing effect');
+    await expect(context.dispose()).resolves.toBeUndefined();
+    expect(secondRan).toBe(true);
+  });
+
+  it('executes synchronous effect disposers immediately', async () => {
+    const context = new Context();
+    let active = true;
+
+    const dispose = context.effect(() => () => {
+      active = false;
+    });
+
+    expect(active).toBe(true);
+    dispose();
+    expect(active).toBe(false);
+
+    await context.dispose();
+  });
+
+  it('deduplicates identical disposer across effect and collect', async () => {
+    const ctx = new Context();
+    let calls = 0;
+    const dispose = () => {
+      calls += 1;
+    };
+    ctx.effect(() => dispose);
+    ctx.effect(() => dispose);
+    ctx.fiber.collect(dispose);
+    await ctx.dispose();
+    expect(calls).toBe(1);
+  });
+
+  it('joins every shared asynchronous disposer in reverse order', async () => {
+    const ctx = new Context();
+    const firstGate = deferred();
+    const secondGate = deferred();
+    const firstStarted = deferred();
+    const order: string[] = [];
+    const first = async () => {
+      order.push('first');
+      firstStarted.resolve();
+      await firstGate.promise;
+    };
+    const second = async () => {
+      order.push('second');
+      await secondGate.promise;
+    };
+    ctx.fiber.collect(first);
+    ctx.fiber.collect(second);
+    const dispose = ctx.effect(() => [first, second]);
+    const cleanup = dispose();
+    let settled = false;
+    const disposing = ctx.dispose().then(() => {
+      settled = true;
+    });
+    try {
+      expect(order).toEqual(['second']);
+      secondGate.resolve();
+      await firstStarted.promise;
+      expect(settled).toBe(false);
+      expect(order).toEqual(['second', 'first']);
+    } finally {
+      firstGate.resolve();
+      secondGate.resolve();
+      await cleanup;
+      await disposing;
+    }
+    expect(order).toEqual(['second', 'first']);
+  });
+
+  it('lets owner dispose join in-flight cleanup started via collect', async () => {
+    const ctx = new Context();
+    const gate = deferred();
+    let cleanupRan = false;
+    const dispose = ctx.fiber.collect(async () => {
+      await gate.promise;
+      cleanupRan = true;
+    });
+    const first = dispose();
+    const second = ctx.dispose();
+    let ownerSettled = false;
+    void second.then(() => {
+      ownerSettled = true;
+    });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(ownerSettled).toBe(false);
+    gate.resolve();
+    await second;
+    expect(cleanupRan).toBe(true);
+    await first;
+  });
+
+  it('reclaims partially collected disposers when an async generator throws', async () => {
+    const ctx = new Context();
+    const gate = deferred();
+    const cleaned: string[] = [];
+
+    async function* failingGenerator() {
+      yield () => {
+        cleaned.push('first');
+      };
+      yield async () => {
+        cleaned.push('second');
+      };
+      await gate.promise;
+      throw new Error('generator failure');
+    }
+
+    ctx.effect(() => failingGenerator());
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(cleaned).toEqual([]);
+
+    gate.resolve();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    await ctx.dispose();
+    expect(cleaned.sort()).toEqual(['first', 'second']);
+  });
+
+  it('does not produce unhandled rejection when async generator and its cleanup both fail', async () => {
+    const ctx = new Context();
+    const gate = deferred();
+    let otherCleaned = false;
+
+    ctx.effect(() => () => {
+      otherCleaned = true;
+    });
+
+    async function* failingGenerator() {
+      yield async () => {
+        throw new Error('async cleanup failure');
+      };
+      await gate.promise;
+      throw new Error('generator error');
+    }
+
+    ctx.effect(() => failingGenerator());
+
+    gate.resolve();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    await expect(ctx.dispose()).resolves.toBeUndefined();
+    expect(otherCleaned).toBe(true);
+  });
 });

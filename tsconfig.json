@@ -32,6 +32,7 @@
   },
   "exclude": [
     "node_modules",
+    "packages/cordis-foundation/vendor/**",
     "apps/desktop/**",
     "apps/device-gateway/**",
     "apps/mobile/**",

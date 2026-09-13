@@ -3,6 +3,7 @@
 
 # dependencies
 node_modules
+packages/cordis-foundation/vendor/**
 
 # ci
 coverage

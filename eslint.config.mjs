@@ -10,6 +10,8 @@ export default eslint(
     ignores: [
       // dependencies
       'node_modules',
+      // Keep the audited upstream Cordis sources byte-for-byte intact.
+      'packages/cordis-foundation/vendor/**',
       // ci
       'coverage',
       '.coverage',
